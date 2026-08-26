@@ -1,0 +1,1 @@
+Tauri v2 entry point can be generated with `cargo tauri init` if the local Rust/Tauri template is preferred.

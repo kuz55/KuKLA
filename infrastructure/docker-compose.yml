@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kukla}
+      POSTGRES_USER: ${POSTGRES_USER:-kukla}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../server/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ../server/sql/002_seed.sql:/docker-entrypoint-initdb.d/002_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-kukla} -d ${POSTGRES_DB:-kukla}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server","--appendonly","yes"]
+    volumes: [redis_data:/data]
+  server:
+    build: ../server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-kukla}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-kukla}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    ports: ["127.0.0.1:18080:8080"]
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: [production]
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on: [server]
+volumes:
+  postgres_data:
+  redis_data:
