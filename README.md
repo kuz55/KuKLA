@@ -8,77 +8,69 @@
 
 ## 🌍 Open Source Project / Открытый проект
 
-### 🇷🇺 Приглашаем разработчиков и специалистов
+**KuKLA — свободный open-source проект, который развивается совместно с сообществом.**
 
-**KuKLA развивается как открытый проект с открытым исходным кодом.**
+Проект открыт для разработчиков, инженеров, дизайнеров, тестировщиков, GIS-специалистов, специалистов по информационной безопасности, DevOps, AI, документации и, особенно, для людей с реальным опытом поисковых работ.
 
-Мы приглашаем всех неравнодушных специалистов, которые хотят помочь создать действительно полезный инструмент для поисково-спасательных команд.
+### 🇷🇺 Присоединяйтесь к разработке
 
-Проект особенно открыт для участия:
+Мы не пытаемся просто написать ещё одно приложение. Цель KuKLA — создать надёжный инструмент, который действительно помогает поисковым командам работать быстрее, организованнее и безопаснее.
 
-- 👨‍💻 Backend-разработчиков — **TypeScript, Node.js, Fastify, PostgreSQL, Redis**;
-- 🖥️ Frontend/Desktop-разработчиков — **React, Tauri, TypeScript**;
-- 📱 Mobile-разработчиков — **Flutter, Dart, SQLite, GPS**;
-- 🗺️ специалистов по картографии, GIS и геоданным;
-- 🔐 специалистов по информационной безопасности и DevSecOps;
-- 🐳 DevOps-инженеров и специалистов по Linux, Docker и инфраструктуре;
-- 🧪 QA-инженеров и специалистов по автоматизированному тестированию;
-- 🎨 UX/UI-дизайнеров;
-- 🧠 специалистов по алгоритмам, аналитике и AI;
-- 📡 специалистов по realtime-системам, WebSocket и связи;
-- 📚 технических писателей и специалистов по документации;
-- 🧭 поисковиков, координаторов и других специалистов, способных предложить практические улучшения.
+Нам нужны люди, которые готовы:
 
-Не обязательно быть профессиональным разработчиком. **Хорошая идея, найденная ошибка, улучшение интерфейса, тестирование в полевых условиях, документация или практический опыт поисковых работ также могут сделать проект лучше.**
+- 👨‍💻 писать и проверять код;
+- 🧪 тестировать систему и искать реальные ошибки;
+- 🗺️ улучшать GIS и работу с картами;
+- 🔐 находить и устранять проблемы безопасности;
+- 🐳 развивать Linux/Docker/DevOps-инфраструктуру;
+- 📱 улучшать мобильный клиент и работу GPS;
+- 🖥️ развивать Desktop-клиент;
+- 🎨 проектировать удобный интерфейс для работы в стрессовых и полевых условиях;
+- 🧠 исследовать применение AI и алгоритмов;
+- 📡 улучшать realtime, WebSocket и работу при нестабильной связи;
+- 📚 писать документацию;
+- 🧭 проверять KuKLA в реальных сценариях поисковой работы.
 
-Если вы видите проблему, которая может быть решена, или функцию, которая действительно нужна поисковым командам, создайте Issue или Pull Request и присоединяйтесь к разработке.
+**Необязательно быть профессиональным программистом.** Хорошая идея, подробный bug report, UX-наблюдение, тестирование на реальном устройстве или опыт координатора поиска могут оказаться не менее ценными, чем сотня строк кода.
 
-### Как помочь проекту
+### 🇬🇧 Join the project
 
-1. Изучите код и документацию.
-2. Создайте **Issue**, если нашли ошибку или хотите предложить улучшение.
-3. Для самостоятельной реализации создайте **Pull Request**.
-4. Обсуждайте архитектуру и решения вместе с другими участниками.
-5. Тестируйте KuKLA и сообщайте о проблемах.
-6. Помогайте улучшать документацию и инструкции.
+KuKLA is a **free and open-source project developed together with its community**.
 
-**Цель открытого проекта — не собрать как можно больше кода. Цель — собрать вокруг проекта людей с разным опытом и вместе создать надёжный инструмент, который способен приносить реальную пользу поисковым отрядам.**
+We welcome developers, engineers, designers, QA specialists, GIS experts, security researchers, DevOps engineers, AI/algorithm specialists, technical writers and people with practical search-and-rescue experience.
 
-### 🇬🇧 Open Source Contribution
+We are looking for people who can:
 
-**KuKLA is being developed as an open-source project.**
+- 👨‍💻 write, review and improve code;
+- 🧪 test the system and find real-world bugs;
+- 🗺️ improve GIS and mapping capabilities;
+- 🔐 improve security;
+- 🐳 work on Linux, Docker and DevOps infrastructure;
+- 📱 improve the mobile client and GPS reliability;
+- 🖥️ develop the Desktop client;
+- 🎨 design interfaces for stressful field environments;
+- 🧠 explore AI and algorithmic assistance;
+- 📡 improve realtime communication and resilience to unstable connectivity;
+- 📚 improve technical documentation;
+- 🧭 test KuKLA in realistic search-and-rescue scenarios.
 
-We welcome developers, engineers, designers, testers, GIS specialists, security professionals, DevOps engineers, technical writers, search-and-rescue practitioners and anyone else who can help make the project better.
+**You do not need to be a professional developer.** A good idea, detailed bug report, UX observation, field test or practical coordination experience can be just as valuable as code.
 
-We are especially interested in contributions from people working with:
+### Как участвовать / How to contribute
 
-- Backend development — **TypeScript, Node.js, Fastify, PostgreSQL, Redis**;
-- Frontend/Desktop development — **React, Tauri, TypeScript**;
-- Mobile development — **Flutter, Dart, SQLite, GPS**;
-- GIS, mapping and geospatial data;
-- Information security and DevSecOps;
-- Linux, Docker and DevOps infrastructure;
-- QA and automated testing;
-- UX/UI design;
-- Algorithms, analytics and AI;
-- Realtime systems, WebSocket and communications;
-- Technical writing and documentation;
-- Search-and-rescue operations and field coordination.
+1. Изучите код и документацию / Explore the codebase and documentation.
+2. Создайте **Issue** для ошибки, идеи или предложения / Open an **Issue**.
+3. Для изменений кода создайте ветку и **Pull Request** / Create a branch and submit a **Pull Request**.
+4. Обсуждайте архитектуру и решения открыто / Discuss architecture openly.
+5. Тестируйте проект и делитесь результатами / Test and share results.
 
-You do not have to be a professional developer to contribute. **A useful idea, a bug report, UX feedback, documentation improvement, field testing or practical search-and-rescue experience can be just as valuable.**
+Подробнее: **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[ROADMAP.md](ROADMAP.md)** · **[SECURITY.md](SECURITY.md)**
 
-If you see a problem worth solving or a feature that could make KuKLA more useful for search teams, open an Issue or submit a Pull Request and join the project.
+### Принципы сообщества
 
-### Ways to contribute
+KuKLA развивается по принципу: **безопасность → надёжность → удобство → новые возможности**.
 
-1. Explore the codebase and documentation.
-2. Open an **Issue** for bugs, questions or feature proposals.
-3. Submit a **Pull Request** for improvements and fixes.
-4. Discuss architecture and technical decisions with the community.
-5. Test KuKLA and report real-world problems.
-6. Help improve documentation and deployment instructions.
-
-**The goal of an open-source project is not to accumulate code. The goal is to bring together people with different expertise and build a reliable tool that can provide real value to search-and-rescue teams.**
+Мы особенно ценим изменения, которые решают реальные проблемы поисковых групп, не создают лишних рисков и остаются понятными для следующих разработчиков.
 
 ---
 
@@ -248,3 +240,9 @@ For development only:
 KuKLA is under active development. The repository contains the current functional architecture and implementation of the platform, while production readiness and field validation remain ongoing work.
 
 The project is intended to evolve together with the practical requirements of search teams and real-world field operations.
+
+## 📄 License
+
+KuKLA is distributed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)**. See [LICENSE](LICENSE).
+
+This means the software can be used, studied, modified and redistributed under the terms of the GPL.
