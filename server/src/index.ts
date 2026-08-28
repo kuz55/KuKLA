@@ -1,4 +1,4 @@
-/ё\import Fastify, { FastifyRequest } from 'fastify';
+import Fastify, { FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import sensible from '@fastify/sensible';
@@ -18,7 +18,8 @@ await app.register(cors, { origin: CORS_ORIGIN });
 await app.register(sensible);
 await app.register(jwt, { secret: JWT_SECRET });
 await app.register(websocket);
-type Role = 'SUPERUSER'|'ADMIN'|'LEADER'|'COORDINATOR'|'SEARCHER'|'VIEWER';
+
+type Role = 'SYSTEM_OWNER'|'SUPERADMIN'|'SUPERUSER'|'ADMIN'|'LEADER'|'COORDINATOR'|'SEARCHER'|'VIEWER';
 type User = { id:string; name:string; email?:string; phone?:string; role:Role };
 declare module '@fastify/jwt' { interface FastifyJWT { user: User } }
 
@@ -26,6 +27,26 @@ type Req = FastifyRequest<{Params: Record<string,string>}>;
 const auth = async (req: any) => { try { await req.jwtVerify(); } catch { throw app.httpErrors.unauthorized('Authentication required'); } };
 const roles = (...allowed: Role[]) => async (req: any) => { await auth(req); if (!allowed.includes(req.user.role)) throw app.httpErrors.forbidden('Insufficient permissions'); };
 const parseId = (req: any) => z.string().uuid().parse(req.params.id);
+
+const privilegedRoles: Role[] = ['SYSTEM_OWNER','SUPERADMIN','SUPERUSER'];
+const adminRoles: Role[] = ['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN'];
+const managementRoles: Role[] = ['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR'];
+
+const canManageUser = (actor: Role, target: Role) => {
+  if (actor === 'SYSTEM_OWNER') return true;
+  if (actor === 'SUPERADMIN') return target !== 'SYSTEM_OWNER' && target !== 'SUPERADMIN';
+  if (actor === 'SUPERUSER') return target !== 'SYSTEM_OWNER' && target !== 'SUPERADMIN' && target !== 'SUPERUSER';
+  if (actor === 'ADMIN') return !privilegedRoles.includes(target) && target !== 'ADMIN';
+  return false;
+};
+
+const canAssignRole = (actor: Role, next: Role) => {
+  if (actor === 'SYSTEM_OWNER') return next !== 'SYSTEM_OWNER';
+  if (actor === 'SUPERADMIN') return !['SYSTEM_OWNER','SUPERADMIN','SUPERUSER'].includes(next);
+  if (actor === 'SUPERUSER') return !['SYSTEM_OWNER','SUPERADMIN','SUPERUSER'].includes(next);
+  if (actor === 'ADMIN') return !privilegedRoles.includes(next) && next !== 'ADMIN';
+  return false;
+};
 
 async function audit(searchId: string|null, userId: string, type: string, payload: Record<string, unknown> = {}) {
   await pool.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)', [searchId, userId, type, payload]);
@@ -57,7 +78,7 @@ app.post('/api/v1/auth/register', async (req) => {
 app.post('/api/v1/auth/logout',{preHandler:auth},async(req)=>{await pool.query('DELETE FROM sessions WHERE user_id=$1',[req.user.id]);return {ok:true};});
 app.get('/api/v1/me',{preHandler:auth},async req=>req.user);
 
-app.get('/api/v1/users',{preHandler:roles('SUPERUSER','ADMIN','LEADER','COORDINATOR')},async()=>{
+app.get('/api/v1/users',{preHandler:roles(...managementRoles)},async()=>{
   const r=await pool.query(`
     SELECT id,name,email,phone,role,active,created_at
     FROM users
@@ -66,12 +87,11 @@ app.get('/api/v1/users',{preHandler:roles('SUPERUSER','ADMIN','LEADER','COORDINA
   return r.rows;
 });
 
-app.patch('/api/v1/users/:id',{preHandler:roles('SUPERUSER','ADMIN','LEADER')},async(req)=>{
+app.patch('/api/v1/users/:id',{preHandler:roles(...adminRoles)},async(req)=>{
   const id=parseId(req);
-
   const b=z.object({
     name:z.string().min(2).optional(),
-    role:z.enum(['SUPERUSER','ADMIN','LEADER','COORDINATOR','SEARCHER','VIEWER']).optional(),
+    role:z.enum(['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR','SEARCHER','VIEWER']).optional(),
     active:z.boolean().optional(),
     phone:z.string().optional()
   }).refine(v=>
@@ -89,49 +109,40 @@ app.patch('/api/v1/users/:id',{preHandler:roles('SUPERUSER','ADMIN','LEADER')},a
 
   if(!current.rowCount)
     throw app.httpErrors.notFound('User not found');
-if (
-  req.user.role !== 'SUPERUSER' &&
-  current.rows[0].role === 'SUPERUSER'
-) {
-  throw app.httpErrors.forbidden(
-    'Only SUPERUSER can modify a SUPERUSER'
-  );
-}
 
-if (
-  req.user.role !== 'SUPERUSER' &&
-  b.role === 'SUPERUSER'
-) {
-  throw app.httpErrors.forbidden(
-    'Only SUPERUSER can assign SUPERUSER role'
-  );
-}
+  const currentRole = current.rows[0].role as Role;
+  const actorRole = req.user.role as Role;
 
-  if(id===req.user.id && b.active===false)
+  if (!canManageUser(actorRole, currentRole)) {
+    throw app.httpErrors.forbidden('Insufficient permissions to modify this user');
+  }
+
+  if (b.role !== undefined && !canAssignRole(actorRole, b.role)) {
+    throw app.httpErrors.forbidden('Insufficient permissions to assign this role');
+  }
+
+  if (id === req.user.id && b.active === false)
     throw app.httpErrors.badRequest('You cannot deactivate yourself');
 
-  if(
-    id===req.user.id &&
-    b.role &&
-    b.role!=='ADMIN'
-  )
-    throw app.httpErrors.badRequest('You cannot remove your own ADMIN role');
+  if (id === req.user.id && b.role !== undefined && b.role !== actorRole)
+    throw app.httpErrors.badRequest('You cannot change your own role');
 
-  if(
-    current.rows[0].role==='ADMIN' &&
-    b.active===false
-  ){
+  if (currentRole === 'SYSTEM_OWNER' && (b.active === false || (b.role !== undefined && b.role !== 'SYSTEM_OWNER')))
+    throw app.httpErrors.badRequest('SYSTEM_OWNER cannot be deactivated or demoted through the user API');
+
+  if (b.role === 'SYSTEM_OWNER' && currentRole !== 'SYSTEM_OWNER')
+    throw app.httpErrors.forbidden('SYSTEM_OWNER can only be established by the secure bootstrap process');
+
+  if (currentRole === 'ADMIN' && b.active === false) {
     const admins=await pool.query(
       `SELECT count(*)::int AS count
        FROM users
-       WHERE role='ADMIN' AND active=true AND id<>$1`,
+       WHERE role IN ('SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN') AND active=true AND id<>$1`,
       [id]
     );
 
     if(admins.rows[0].count===0)
-      throw app.httpErrors.badRequest(
-        'Cannot deactivate the last active administrator'
-      );
+      throw app.httpErrors.badRequest('Cannot deactivate the last active system administrator');
   }
 
   const r=await pool.query(`
@@ -151,20 +162,21 @@ if (
     id
   ]);
 
+  await audit(null, req.user.id, 'USER_UPDATED', { userId:id, changes:b });
   return r.rows[0];
 });
 
 app.get('/api/v1/searches',{preHandler:auth},async()=> (await pool.query(`SELECT s.*,u.name creator,(SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,(SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,(SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points FROM searches s LEFT JOIN users u ON u.id=s.created_by ORDER BY s.created_at DESC`)).rows);
 
 app.get('/api/v1/searches/:id',{preHandler:auth},async(req)=>{const id=parseId(req);const r=await pool.query(`SELECT s.*,u.name creator,(SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,(SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks FROM searches s LEFT JOIN users u ON u.id=s.created_by WHERE s.id=$1`,[id]);if(!r.rowCount)throw app.httpErrors.notFound();return r.rows[0];});
-app.post('/api/v1/searches',{preHandler:roles('ADMIN','LEADER','COORDINATOR')},async(req)=>{const b=z.object({title:z.string().min(2),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().min(-90).max(90).optional(),incident_lng:z.number().min(-180).max(180).optional()}).parse(req.body);const r=await pool.query('INSERT INTO searches(title,area,description,incident_lat,incident_lng,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[b.title,b.area??null,b.description??null,b.incident_lat??null,b.incident_lng??null,req.user.id]);await audit(r.rows[0].id,req.user.id,'SEARCH_CREATED',{title:b.title});return r.rows[0];});
-app.patch('/api/v1/searches/:id',{preHandler:roles('ADMIN','LEADER','COORDINATOR')},async(req)=>{const id=parseId(req);const b=z.object({status:z.enum(['PLANNED','ACTIVE','PAUSED','COMPLETED','CANCELLED']).optional(),title:z.string().min(2).optional(),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().optional(),incident_lng:z.number().optional()}).parse(req.body);const r=await pool.query(`UPDATE searches SET title=COALESCE($1,title),area=COALESCE($2,area),description=COALESCE($3,description),status=COALESCE($4,status),incident_lat=COALESCE($5,incident_lat),incident_lng=COALESCE($6,incident_lng),started_at=CASE WHEN $4='ACTIVE' AND started_at IS NULL THEN now() ELSE started_at END,ended_at=CASE WHEN $4 IN ('COMPLETED','CANCELLED') THEN now() ELSE ended_at END WHERE id=$7 RETURNING *`,[b.title??null,b.area??null,b.description??null,b.status??null,b.incident_lat??null,b.incident_lng??null,id]);if(!r.rowCount)throw app.httpErrors.notFound();await audit(id,req.user.id,'SEARCH_UPDATED',{changes:b});return r.rows[0];});
+app.post('/api/v1/searches',{preHandler:roles(...managementRoles)},async(req)=>{const b=z.object({title:z.string().min(2),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().min(-90).max(90).optional(),incident_lng:z.number().min(-180).max(180).optional()}).parse(req.body);const r=await pool.query('INSERT INTO searches(title,area,description,incident_lat,incident_lng,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[b.title,b.area??null,b.description??null,b.incident_lat??null,b.incident_lng??null,req.user.id]);await audit(r.rows[0].id,req.user.id,'SEARCH_CREATED',{title:b.title});return r.rows[0];});
+app.patch('/api/v1/searches/:id',{preHandler:roles(...managementRoles)},async(req)=>{const id=parseId(req);const b=z.object({status:z.enum(['PLANNED','ACTIVE','PAUSED','COMPLETED','CANCELLED']).optional(),title:z.string().min(2).optional(),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().optional(),incident_lng:z.number().optional()}).parse(req.body);const r=await pool.query(`UPDATE searches SET title=COALESCE($1,title),area=COALESCE($2,area),description=COALESCE($3,description),status=COALESCE($4,status),incident_lat=COALESCE($5,incident_lat),incident_lng=COALESCE($6,incident_lng),started_at=CASE WHEN $4='ACTIVE' AND started_at IS NULL THEN now() ELSE started_at END,ended_at=CASE WHEN $4 IN ('COMPLETED','CANCELLED') THEN now() ELSE ended_at END WHERE id=$7 RETURNING *`,[b.title??null,b.area??null,b.description??null,b.status??null,b.incident_lat??null,b.incident_lng??null,id]);if(!r.rowCount)throw app.httpErrors.notFound();await audit(id,req.user.id,'SEARCH_UPDATED',{changes:b});return r.rows[0];});
 app.get('/api/v1/searches/:id/members',{preHandler:auth},async(req)=>{const id=parseId(req);return (await pool.query(`SELECT u.id,u.name,u.email,u.phone,u.role,m.joined_at FROM search_members m JOIN users u ON u.id=m.user_id WHERE m.search_id=$1 ORDER BY m.joined_at`,[id])).rows;});
 app.post('/api/v1/searches/:id/join',{preHandler:auth},async(req)=>{const id=parseId(req);await pool.query('INSERT INTO search_members(search_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[id,req.user.id]);await audit(id,req.user.id,'MEMBER_JOINED');return {ok:true};});
-app.delete('/api/v1/searches/:id/members/:userId',{preHandler:roles('ADMIN','LEADER','COORDINATOR')},async(req: FastifyRequest<{Params:{id:string;userId:string}}>)=>{const id=parseId(req);const uid=z.string().uuid().parse(req.params.userId);await pool.query('DELETE FROM search_members WHERE search_id=$1 AND user_id=$2',[id,uid]);await audit(id,req.user.id,'MEMBER_REMOVED',{userId:uid});return {ok:true};});
+app.delete('/api/v1/searches/:id/members/:userId',{preHandler:roles(...managementRoles)},async(req: FastifyRequest<{Params:{id:string;userId:string}}>)=>{const id=parseId(req);const uid=z.string().uuid().parse(req.params.userId);await pool.query('DELETE FROM search_members WHERE search_id=$1 AND user_id=$2',[id,uid]);await audit(id,req.user.id,'MEMBER_REMOVED',{userId:uid});return {ok:true};});
 
 app.get('/api/v1/searches/:id/tasks',{preHandler:auth},async(req)=>{const id=parseId(req);return (await pool.query('SELECT t.*,u.name assignee FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id WHERE t.search_id=$1 ORDER BY t.status,t.priority,t.created_at',[id])).rows;});
-app.post('/api/v1/searches/:id/tasks',{preHandler:roles('ADMIN','LEADER','COORDINATOR')},async(req)=>{const id=parseId(req);const b=z.object({title:z.string().min(2),description:z.string().optional(),assigneeId:z.string().uuid().optional(),priority:z.number().int().min(1).max(3).default(2),lat:z.number().min(-90).max(90).optional(),lng:z.number().min(-180).max(180).optional()}).parse(req.body);const r=await pool.query('INSERT INTO tasks(search_id,title,description,assignee_id,priority,lat,lng,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[id,b.title,b.description??null,b.assigneeId??null,b.priority,b.lat??null,b.lng??null,req.user.id]);await audit(id,req.user.id,'TASK_CREATED',{taskId:r.rows[0].id});return r.rows[0];});
+app.post('/api/v1/searches/:id/tasks',{preHandler:roles(...managementRoles)},async(req)=>{const id=parseId(req);const b=z.object({title:z.string().min(2),description:z.string().optional(),assigneeId:z.string().uuid().optional(),priority:z.number().int().min(1).max(3).default(2),lat:z.number().min(-90).max(90).optional(),lng:z.number().min(-180).max(90).optional()}).parse(req.body);const r=await pool.query('INSERT INTO tasks(search_id,title,description,assignee_id,priority,lat,lng,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[id,b.title,b.description??null,b.assigneeId??null,b.priority,b.lat??null,b.lng??null,req.user.id]);await audit(id,req.user.id,'TASK_CREATED',{taskId:r.rows[0].id});return r.rows[0];});
 app.patch('/api/v1/tasks/:id',{preHandler:auth},async(req)=>{const id=parseId(req);const b=z.object({status:z.enum(['OPEN','IN_PROGRESS','DONE','CANCELLED']).optional(),assigneeId:z.string().uuid().nullable().optional(),description:z.string().optional(),priority:z.number().int().min(1).max(3).optional()}).parse(req.body);const r=await pool.query(`UPDATE tasks SET status=COALESCE($1,status),assignee_id=COALESCE($2,assignee_id),description=COALESCE($3,description),priority=COALESCE($4,priority),completed_at=CASE WHEN $1='DONE' THEN now() WHEN $1 IS NOT NULL THEN NULL ELSE completed_at END WHERE id=$5 RETURNING *`,[b.status??null,b.assigneeId??null,b.description??null,b.priority??null,id]);if(!r.rowCount)throw app.httpErrors.notFound();const task=r.rows[0];await audit(task.search_id,req.user.id,'TASK_UPDATED',{taskId:id,status:b.status});return task;});
 
 app.get('/api/v1/searches/:id/events',{preHandler:auth},async(req)=>{const id=parseId(req);return (await pool.query('SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 ORDER BY e.created_at DESC LIMIT 500',[id])).rows;});
