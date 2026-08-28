@@ -1,248 +1,555 @@
 # KuKLA 2.1
 
-> **KuKLA** — координационная информационная система для поисково-спасательных отрядов и организации полевых поисковых работ.
+> **KuKLA** — цифровая координационная система для поисково-спасательных отрядов и управления полевыми поисковыми операциями.
 >
-> **KuKLA** is a coordination and operational information system designed for search-and-rescue teams and field search operations.
+> **KuKLA** is a digital command, coordination and field-operations platform for search-and-rescue teams.
 
 ---
 
-## 🌍 Open Source Project / Открытый проект
+## 🎯 Идея проекта
 
-**KuKLA — свободный open-source проект, который развивается совместно с сообществом.**
+KuKLA создаётся не как ещё один чат, трекер GPS или карта. Это единая цифровая среда управления поиском, которая связывает штаб/координационный центр, руководителя поиска, координаторов, экипажи и поисковиков в поле.
 
-Проект открыт для разработчиков, инженеров, дизайнеров, тестировщиков, GIS-специалистов, специалистов по информационной безопасности, DevOps, AI, документации и, особенно, для людей с реальным опытом поисковых работ.
+Главная проблема, которую решает KuKLA: во время поиска критически важная информация обычно распределена между мессенджерами, телефонными звонками, таблицами, бумажными записями, навигаторами и отдельными картографическими приложениями. KuKLA объединяет эти процессы в одной системе.
 
-### 🇷🇺 Присоединяйтесь к разработке
+**Базовый принцип:** координатор должен видеть состояние поиска, задачи, людей, технику, GPS и оперативные события в одном месте, а поисковик должен получать понятную задачу и работать в поле даже при нестабильной связи.
 
-Мы не пытаемся просто написать ещё одно приложение. Цель KuKLA — создать надёжный инструмент, который действительно помогает поисковым командам работать быстрее, организованнее и безопаснее.
-
-Нам нужны люди, которые готовы:
-
-- 👨‍💻 писать и проверять код;
-- 🧪 тестировать систему и искать реальные ошибки;
-- 🗺️ улучшать GIS и работу с картами;
-- 🔐 находить и устранять проблемы безопасности;
-- 🐳 развивать Linux/Docker/DevOps-инфраструктуру;
-- 📱 улучшать мобильный клиент и работу GPS;
-- 🖥️ развивать Desktop-клиент;
-- 🎨 проектировать удобный интерфейс для работы в стрессовых и полевых условиях;
-- 🧠 исследовать применение AI и алгоритмов;
-- 📡 улучшать realtime, WebSocket и работу при нестабильной связи;
-- 📚 писать документацию;
-- 🧭 проверять KuKLA в реальных сценариях поисковой работы.
-
-**Необязательно быть профессиональным программистом.** Хорошая идея, подробный bug report, UX-наблюдение, тестирование на реальном устройстве или опыт координатора поиска могут оказаться не менее ценными, чем сотня строк кода.
-
-### 🇬🇧 Join the project
-
-KuKLA is a **free and open-source project developed together with its community**.
-
-We welcome developers, engineers, designers, QA specialists, GIS experts, security researchers, DevOps engineers, AI/algorithm specialists, technical writers and people with practical search-and-rescue experience.
-
-We are looking for people who can:
-
-- 👨‍💻 write, review and improve code;
-- 🧪 test the system and find real-world bugs;
-- 🗺️ improve GIS and mapping capabilities;
-- 🔐 improve security;
-- 🐳 work on Linux, Docker and DevOps infrastructure;
-- 📱 improve the mobile client and GPS reliability;
-- 🖥️ develop the Desktop client;
-- 🎨 design interfaces for stressful field environments;
-- 🧠 explore AI and algorithmic assistance;
-- 📡 improve realtime communication and resilience to unstable connectivity;
-- 📚 improve technical documentation;
-- 🧭 test KuKLA in realistic search-and-rescue scenarios.
-
-**You do not need to be a professional developer.** A good idea, detailed bug report, UX observation, field test or practical coordination experience can be just as valuable as code.
-
-### Как участвовать / How to contribute
-
-1. Изучите код и документацию / Explore the codebase and documentation.
-2. Создайте **Issue** для ошибки, идеи или предложения / Open an **Issue**.
-3. Для изменений кода создайте ветку и **Pull Request** / Create a branch and submit a **Pull Request**.
-4. Обсуждайте архитектуру и решения открыто / Discuss architecture openly.
-5. Тестируйте проект и делитесь результатами / Test and share results.
-
-Подробнее: **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[ROADMAP.md](ROADMAP.md)** · **[SECURITY.md](SECURITY.md)**
-
-### Принципы сообщества
-
-KuKLA развивается по принципу: **безопасность → надёжность → удобство → новые возможности**.
-
-Мы особенно ценим изменения, которые решают реальные проблемы поисковых групп, не создают лишних рисков и остаются понятными для следующих разработчиков.
+KuKLA должна уменьшать информационный шум, количество ручных операций и риск потери критически важных данных.
 
 ---
 
-## 🇷🇺 О проекте
+## 🧭 Что должна обеспечивать система
 
-**KuKLA** — это программная платформа для организации, координации и сопровождения поисковых операций. Проект создаётся с учётом реальной работы поисковых отрядов, где необходимо быстро распределять задачи, видеть участников и их GPS-позиции, обмениваться оперативной информацией и сохранять историю действий.
+### Управление поисковой операцией
 
-KuKLA предназначена прежде всего для **поисково-спасательных отрядов, добровольческих поисковых организаций, координаторов и руководителей поисковых операций**.
+- создание карточки поиска;
+- регистрация исходных данных о пропавшем и обстоятельствах;
+- адрес/район и география поиска;
+- стадия и статус операции;
+- временная шкала поиска;
+- штаб и ответственные лица;
+- управление участниками;
+- распределение ролей;
+- назначение экипажей и групп;
+- постановка, изменение и закрытие задач;
+- контроль статусов и прогресса;
+- журнал событий;
+- история изменений и действий пользователей;
+- итоговые материалы и закрытие операции.
 
-Главная идея проекта — объединить в одной системе то, что во время поиска обычно распределено между мессенджерами, таблицами, картами и отдельными приложениями.
+### Карта и GIS
 
-### Для чего нужна KuKLA
+Карта является одним из центральных рабочих инструментов системы.
 
-Система помогает:
+Планируется/предусматривается:
 
-- создавать и вести поисковые операции;
-- управлять составом поиска и ролями участников;
-- распределять задачи между экипажами и поисковиками;
-- отслеживать выполнение задач;
-- получать и отображать GPS-позиции участников;
-- отображать треки на карте;
-- работать с оперативной информацией в единой системе;
-- сохранять журнал событий и действий пользователей;
-- синхронизировать данные между клиентами и сервером;
-- поддерживать работу мобильного клиента в условиях нестабильного соединения;
-- создавать резервные копии и восстанавливать данные.
+- OpenStreetMap и расширяемые картографические источники;
+- отображение участников в реальном времени;
+- GPS-треки;
+- история перемещений;
+- поисковые квадраты и сектора;
+- зоны ответственности;
+- точки интереса;
+- контрольные точки;
+- места обнаружений и событий;
+- маршруты;
+- отметки опасностей и ограничений;
+- визуализация уже обследованных участков;
+- работа с геометриями и слоями;
+- импорт/экспорт геоданных;
+- подготовка данных для последующего GIS-анализа.
 
-### Для кого
+### GPS и полевые группы
 
-KuKLA рассчитана на несколько категорий пользователей:
+Мобильный клиент должен уметь:
 
-- **Администраторы** — управление системой и пользователями.
-- **Руководители поиска** — управление поисковой операцией.
-- **Координаторы** — оперативная работа с задачами, участниками и картой.
-- **Поисковики** — получение задач, передача GPS-координат и работа непосредственно в поле.
+- передавать координаты в фоне;
+- сохранять GPS при отсутствии связи;
+- ставить точки;
+- записывать трек;
+- отправлять накопленные данные после восстановления связи;
+- показывать собственное положение;
+- показывать назначенную задачу и район работы;
+- информировать о состоянии синхронизации;
+- минимизировать расход батареи и трафика.
 
-### Архитектура
+Для координатора сервер должен принимать и обрабатывать GPS-точки, хранить историю и предоставлять её клиентам.
 
-KuKLA построена как клиент-серверная система:
+### Realtime
 
-- **Desktop** — Tauri + React. Используется администраторами, руководителями и координаторами.
-- **Mobile** — Flutter. Предназначен для участников поиска, работающих в поле.
-- **Server** — Fastify + PostgreSQL + Redis.
-- **Infrastructure** — Docker Compose и Linux.
+KuKLA предусматривает realtime-обмен через WebSocket/событийный слой:
 
-Обязательного веб-интерфейса нет. Сервер предоставляет API, которым пользуются клиентские приложения.
+- новые GPS-точки;
+- изменение статуса задачи;
+- назначение или изменение задачи;
+- изменения участников;
+- оперативные события;
+- системные уведомления;
+- обновления состояния поиска.
 
-### Основные возможности текущей версии
+При разрыве связи система не должна считать потерю сети потерей данных.
+
+---
+
+## 👥 Роли и RBAC
+
+Система должна иметь серверную модель авторизации и разграничения доступа.
+
+Основные роли:
+
+- **Administrator** — пользователи, роли, настройки и системное управление;
+- **Search Leader** — руководство поисковой операцией;
+- **Coordinator** — оперативное управление участниками, задачами и картой;
+- **Searcher** — полевой участник, задачи, GPS и события.
+
+RBAC должен проверяться **на сервере**, а не только в интерфейсе. Доступ к операциям, данным, GPS и административным функциям должен зависеть от роли и контекста конкретного поиска.
+
+В дальнейшем модель должна быть расширяема до подразделений, команд, приглашений, временных ролей и более детальных permissions.
+
+---
+
+## 📱 Клиенты
+
+### Desktop
+
+Desktop-клиент является основным рабочим местом штаба и координаторов.
+
+Технологическая основа: **Tauri + React**.
+
+Предполагаемые рабочие разделы:
+
+- авторизация;
+- список поисков;
+- карточка операции;
+- оперативная панель;
+- карта;
+- участники;
+- экипажи/группы;
+- задачи;
+- GPS и треки;
+- события и аудит;
+- уведомления;
+- настройки и администрирование.
+
+**KuKLA не требует обязательного веб-интерфейса.** Сервер является API/backend-слоем для клиентских приложений.
+
+### Mobile
+
+Мобильный клиент на **Flutter** предназначен для поисковиков и других полевых участников.
+
+Приоритет мобильного клиента: простота, читаемость, минимальное число действий, работа при плохой связи и надёжная передача GPS.
+
+Предусматриваются:
+
+- текущая задача;
+- карта;
+- собственный GPS;
+- трек;
+- статусы выполнения;
+- сообщения/оперативные события;
+- точки;
+- офлайн-кэш;
+- очередь исходящих команд;
+- автоматическая синхронизация.
+
+---
+
+## 📴 Offline-first
+
+Работа в лесу, за городом и в зонах слабой мобильной сети является базовым сценарием, а не исключением.
+
+Мобильный клиент должен использовать локальное хранилище SQLite и очередь команд.
+
+При отсутствии связи:
+
+1. пользователь продолжает работать с доступными данными;
+2. GPS и действия сохраняются локально;
+3. команды попадают в очередь;
+4. после восстановления связи выполняется синхронизация;
+5. сервер подтверждает обработанные операции;
+6. конфликтующие изменения должны обрабатываться предсказуемо.
+
+Snapshot API используется для первичной загрузки состояния и восстановления локального состояния клиента.
+
+---
+
+## 🔄 Синхронизация данных
+
+Система должна поддерживать устойчивую синхронизацию между Desktop, Mobile и Server.
+
+Ключевые требования:
+
+- идентификаторы операций и событий;
+- timestamps;
+- идемпотентность повторной доставки;
+- подтверждение обработки команд;
+- защита от дублирования;
+- корректное восстановление после reconnect;
+- начальный snapshot;
+- последующая доставка изменений;
+- сохранение истории критических событий.
+
+---
+
+## 🔐 Безопасность
+
+Безопасность является фундаментальным требованием проекта.
+
+Предусматриваются:
 
 - JWT-аутентификация;
 - серверный RBAC;
-- жизненный цикл поисковой операции;
-- оперативная панель поиска;
-- управление участниками поиска;
-- задачи и статусы задач;
-- журнал событий и аудита;
-- приём GPS-точек;
-- отображение GPS-треков;
-- карта на базе OpenStreetMap;
-- передача GPS с мобильного устройства;
-- локальный SQLite-кэш мобильного клиента;
-- офлайн-очередь команд;
-- snapshot API для начальной синхронизации;
-- Docker Compose для развёртывания на Linux/Xubuntu;
-- резервное копирование и восстановление базы данных;
-- набор рекомендаций по подготовке системы к production-эксплуатации.
-
-### Важное замечание
-
-KuKLA является функциональным development/MVP-релизом. На текущем этапе проект **не является сертифицированной системой жизнеобеспечения или mission-critical системой спасательных служб**.
-
-Перед использованием в реальных поисковых операциях необходимо завершить production hardening, провести независимый аудит безопасности, проверить фоновую и офлайн-передачу GPS, реализовать и протестировать инфраструктуру уведомлений, провести практические испытания восстановления резервных копий и выполнить полноценное полевое тестирование.
+- безопасное хранение паролей через хеширование;
+- проверка прав на каждом защищённом API-операции;
+- изоляция данных разных операций;
+- аудит критических действий;
+- безопасная конфигурация секретов через environment variables;
+- минимизация выдаваемых клиенту данных;
+- защита административных функций;
+- резервное копирование;
+- контроль восстановления;
+- production hardening;
+- независимый security audit перед эксплуатацией в критических сценариях.
 
 ---
 
-## 🇬🇧 About the project
+## 🗄️ Данные и backend
 
-**KuKLA** is a software platform for organizing, coordinating and supporting search operations. It is designed around the practical needs of search-and-rescue teams, where coordinators and field participants need to distribute tasks, monitor team members and GPS positions, exchange operational information and maintain a reliable history of actions.
+Серверная часть построена на:
 
-KuKLA is primarily intended for **search-and-rescue teams, volunteer search organizations, search coordinators and operation leaders**.
+- **Fastify + TypeScript**;
+- **PostgreSQL** как основной database storage;
+- **Redis** для realtime/кэширования и инфраструктурных задач;
+- WebSocket для realtime;
+- REST/API для клиентских операций.
 
-The core idea is to bring together information that is often scattered across messengers, spreadsheets, mapping applications and separate mobile tools into a single operational system.
+Сущности предметной области должны охватывать как минимум:
 
-### What KuKLA is for
+- users;
+- roles/permissions;
+- search operations;
+- search membership;
+- teams/crews;
+- tasks;
+- task statuses;
+- GPS points;
+- tracks;
+- map objects/areas;
+- events;
+- audit records;
+- synchronization state.
 
-The system helps teams to:
+Схема БД должна развиваться через миграции, а критические операции должны быть транзакционными там, где это необходимо.
 
-- create and manage search operations;
-- manage search membership and user roles;
-- assign tasks to teams and individual searchers;
-- track task status and progress;
-- receive and display GPS positions;
-- display movement tracks on a map;
-- keep operational information in one system;
-- maintain an audit and event log;
-- synchronize data between clients and the server;
-- support mobile operation in environments with unstable connectivity;
-- create and restore database backups.
+---
 
-### Target users
+## 🔔 Уведомления
 
-KuKLA is designed for several user roles:
+Отдельный инфраструктурный слой уведомлений является частью целевой архитектуры.
 
-- **Administrators** — system and user management.
-- **Search leaders** — management of search operations.
-- **Coordinators** — operational work with tasks, participants and maps.
-- **Searchers** — field participants who receive tasks and transmit GPS data.
+Система должна быть способна уведомлять пользователей о:
 
-### Architecture
+- новых назначениях;
+- изменении задач;
+- важных событиях поиска;
+- запросах координатора;
+- изменении статуса операции;
+- системных событиях.
 
-KuKLA follows a client-server architecture:
+Канал доставки должен быть заменяемым и не должен жёстко связывать бизнес-логику с конкретным push-провайдером или мессенджером.
 
-- **Desktop** — Tauri + React for administrators, search leaders and coordinators.
-- **Mobile** — Flutter for field participants.
-- **Server** — Fastify + PostgreSQL + Redis.
-- **Infrastructure** — Docker Compose and Linux.
+---
 
-A mandatory web interface is not required. The server exposes an API consumed by the client applications.
+## 🧾 Аудит и журнал событий
 
-### Current feature set
+KuKLA должна сохранять историю того, что происходило в системе.
 
-- JWT authentication;
-- server-side RBAC;
-- search operation lifecycle management;
-- operational search dashboard;
-- search membership management;
-- tasks and task statuses;
-- audit and event logging;
-- GPS point ingestion;
-- GPS track visualization;
-- OpenStreetMap-based mapping;
-- mobile GPS transmission;
-- mobile SQLite cache;
-- offline command queue;
-- snapshot API for synchronization and bootstrap;
-- Docker Compose deployment on Linux/Xubuntu;
-- database backup and restore scripts;
-- production hardening guidance.
+Аудит нужен для:
 
-### Important notice
+- расследования ошибок;
+- восстановления хронологии поиска;
+- контроля административных действий;
+- анализа работы групп;
+- последующего разбора операции.
 
-KuKLA is currently a functional development/MVP release. It is **not a certified life-safety or mission-critical rescue system**.
+Критические действия не должны бесследно исчезать после изменения текущего состояния объекта.
 
-Before operational deployment, the project requires production hardening, an independent security review, validation of background and offline GPS functionality, notification infrastructure, backup restoration drills and comprehensive field acceptance testing.
+---
+
+## 💾 Резервное копирование и восстановление
+
+Надёжность данных является отдельным направлением проекта.
+
+Инфраструктура должна поддерживать:
+
+- регулярные backup PostgreSQL;
+- хранение резервных копий отдельно от рабочей БД;
+- контроль успешности backup;
+- процедуру restore;
+- периодические тесты восстановления;
+- документированную disaster-recovery процедуру.
+
+Backup считается полноценным только после проверки возможности восстановления.
+
+---
+
+## 🐳 Infrastructure / Deployment
+
+Целевая инфраструктура ориентирована на Linux и контейнеризацию.
+
+Используются:
+
+- Linux;
+- Docker;
+- Docker Compose;
+- PostgreSQL;
+- Redis;
+- отдельный server container;
+- environment-based configuration.
+
+Система должна быть пригодна для развёртывания на собственном сервере организации без обязательной зависимости от публичного облака.
+
+---
+
+## 🧠 AI и интеллектуальная автоматизация
+
+AI не должен заменять руководителя поиска. Его задача в KuKLA — помогать обрабатывать большие объёмы информации и находить закономерности.
+
+Долгосрочные направления:
+
+- анализ поисковых данных;
+- интеллектуальная обработка GIS;
+- приоритизация зон поиска;
+- анализ истории обследованных участков;
+- помощь координатору при распределении ресурсов;
+- обнаружение аномалий в GPS/треке;
+- автоматизация отчётности;
+- анализ оперативной информации;
+- подсказки, основанные на накопленной статистике.
+
+Любые AI-функции должны оставаться контролируемыми человеком и не должны самостоятельно принимать критические решения о безопасности людей.
+
+---
+
+## 📊 Аналитика и отчётность
+
+Целевая система должна позволять анализировать:
+
+- продолжительность операции;
+- количество участников;
+- выполнение задач;
+- покрытие территории;
+- GPS-треки;
+- обследованные сектора;
+- события;
+- эффективность распределения ресурсов;
+- историю поисков.
+
+Должна быть возможность формировать итоговые материалы и отчёты по завершённым операциям.
+
+---
+
+## 🧩 Расширяемость
+
+KuKLA проектируется как платформа, а не как одноразовый набор экранов.
+
+Архитектура должна позволять добавлять:
+
+- новые клиентские приложения;
+- новые роли и permissions;
+- новые типы картографических объектов;
+- новые источники GPS;
+- push-каналы;
+- внешние интеграции;
+- API integrations;
+- плагины/модули;
+- аналитические и AI-компоненты.
+
+Бизнес-логика не должна быть привязана к конкретному UI.
+
+---
+
+## 🏗️ Архитектура
+
+```text
+                         ┌──────────────────────┐
+                         │      KuKLA Server    │
+                         │ Fastify + TypeScript │
+                         └──────────┬───────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+              REST / API       WebSocket        Sync/Snapshot
+                    │               │               │
+          ┌─────────┴──────┐   ┌────┴─────┐   ┌─────┴──────┐
+          │ Desktop Client │   │  Redis   │   │ PostgreSQL │
+          │ Tauri + React  │   │ realtime │   │  database  │
+          └────────────────┘   └──────────┘   └────────────┘
+                    │
+              Internet/LAN
+                    │
+          ┌─────────┴─────────┐
+          │   Mobile Client   │
+          │      Flutter      │
+          │ SQLite + Offline  │
+          └───────────────────┘
+```
+
+---
+
+## 📋 Целевой жизненный цикл поиска
+
+```text
+Создание операции
+       ↓
+Сбор исходных данных
+       ↓
+Формирование района поиска
+       ↓
+Создание штаба / назначение руководителя
+       ↓
+Регистрация участников
+       ↓
+Формирование групп и экипажей
+       ↓
+Разбивка территории на задачи / сектора
+       ↓
+Выход групп в поле
+       ↓
+GPS + треки + события
+       ↓
+Realtime-синхронизация
+       ↓
+Контроль выполнения задач
+       ↓
+Перераспределение ресурсов
+       ↓
+Новые вводные / корректировка поиска
+       ↓
+Обнаружение / завершение поиска
+       ↓
+Сбор итоговых данных
+       ↓
+Отчёт + архив
+```
+
+---
+
+## 🧪 Тестирование и качество
+
+Для production readiness необходимо тестировать не только UI.
+
+Обязательные направления:
+
+- unit tests;
+- integration tests;
+- API tests;
+- authentication/RBAC tests;
+- database/migration tests;
+- WebSocket/realtime tests;
+- GPS tests;
+- offline/online synchronization tests;
+- reconnect tests;
+- backup/restore tests;
+- security testing;
+- Desktop smoke tests;
+- Mobile field tests;
+- нагрузочное тестирование realtime/GPS;
+- полевые испытания на реальных маршрутах и устройствах.
+
+Критический сценарий KuKLA должен рассматриваться как цепочка **клиент → сеть → сервер → БД → синхронизация → клиент**, а не только как отдельный экран.
+
+---
+
+## 🗺️ Roadmap
+
+### Foundation
+
+- [x] базовая client-server архитектура;
+- [x] Fastify server;
+- [x] PostgreSQL;
+- [x] Redis;
+- [x] JWT authentication;
+- [x] server-side RBAC;
+- [x] search lifecycle;
+- [x] tasks;
+- [x] events/audit;
+- [x] GPS ingestion;
+- [x] snapshot API;
+- [x] Docker Compose infrastructure.
+
+### Field-ready
+
+- [ ] полноценный Flutter mobile client;
+- [ ] надёжный background GPS;
+- [ ] offline-first synchronization;
+- [ ] conflict handling;
+- [ ] realtime hardening;
+- [ ] уведомления;
+- [ ] расширенный GIS;
+- [ ] импорт/экспорт геоданных;
+- [ ] полноценные backup/restore drills;
+- [ ] field acceptance testing.
+
+### Production
+
+- [ ] независимый security audit;
+- [ ] threat model;
+- [ ] load/stress testing;
+- [ ] disaster recovery plan;
+- [ ] observability and monitoring;
+- [ ] production deployment documentation;
+- [ ] release/versioning policy;
+- [ ] formal operational acceptance criteria.
+
+### Advanced
+
+- [ ] AI-assisted search analytics;
+- [ ] advanced GIS analysis;
+- [ ] predictive/prioritization tools;
+- [ ] расширенная аналитика;
+- [ ] внешние интеграции;
+- [ ] масштабирование на несколько отрядов/организаций.
+
+---
+
+## 🚦 Статус проекта
+
+KuKLA находится в активной разработке. Репозиторий содержит рабочую основу системы, но проект нельзя считать сертифицированной mission-critical системой спасательных служб.
+
+До использования в реальных критических поисковых операциях необходимо завершить production hardening, независимый аудит безопасности, полноценную проверку offline/background GPS, инфраструктуру уведомлений, тестирование восстановления резервных копий, нагрузочные испытания и практические полевые испытания.
+
+**Приоритеты проекта:**
+
+> **Безопасность → надёжность → офлайн-устойчивость → удобство → realtime → масштабируемость → интеллектуальная автоматизация.**
 
 ---
 
 ## 🚀 Quick start
 
-See `docs/DEPLOYMENT.md` for deployment instructions.
+См. `docs/DEPLOYMENT.md`.
 
-### Demo credentials
-
-For development only:
+### Development credentials
 
 - `admin@kukla.local` / `admin12345`
 - `leader@kukla.local` / `leader12345`
 - `coordinator@kukla.local` / `coord12345`
 - `searcher@kukla.local` / `searcher123`
 
-**Do not use demo credentials in a production environment.**
+**Только для разработки. Не использовать в production.**
 
 ---
 
-## 📌 Project status
+## 🤝 Open Source
 
-KuKLA is under active development. The repository contains the current functional architecture and implementation of the platform, while production readiness and field validation remain ongoing work.
+KuKLA развивается как открытый проект. Особенно приветствуются разработчики, QA, GIS-специалисты, DevOps, специалисты по безопасности, AI/алгоритмам, дизайнеры, технические писатели и люди с практическим опытом поисковой работы.
 
-The project is intended to evolve together with the practical requirements of search teams and real-world field operations.
+Участие может включать код, тестирование, полевые испытания, документацию, UX-наблюдения, GIS и предложения по архитектуре.
+
+См. `CONTRIBUTING.md`, `ROADMAP.md` и `SECURITY.md`.
+
+---
 
 ## 📄 License
 
-KuKLA is distributed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)**. See [LICENSE](LICENSE).
-
-This means the software can be used, studied, modified and redistributed under the terms of the GPL.
+KuKLA распространяется по **GNU General Public License v3.0 or later (GPL-3.0-or-later)**. См. `LICENSE`.
