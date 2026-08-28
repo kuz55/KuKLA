@@ -6,6 +6,82 @@
 
 ---
 
+## 🌍 Open Source Project / Открытый проект
+
+### 🇷🇺 Приглашаем разработчиков и специалистов
+
+**KuKLA развивается как открытый проект с открытым исходным кодом.**
+
+Мы приглашаем всех неравнодушных специалистов, которые хотят помочь создать действительно полезный инструмент для поисково-спасательных команд.
+
+Проект особенно открыт для участия:
+
+- 👨‍💻 Backend-разработчиков — **TypeScript, Node.js, Fastify, PostgreSQL, Redis**;
+- 🖥️ Frontend/Desktop-разработчиков — **React, Tauri, TypeScript**;
+- 📱 Mobile-разработчиков — **Flutter, Dart, SQLite, GPS**;
+- 🗺️ специалистов по картографии, GIS и геоданным;
+- 🔐 специалистов по информационной безопасности и DevSecOps;
+- 🐳 DevOps-инженеров и специалистов по Linux, Docker и инфраструктуре;
+- 🧪 QA-инженеров и специалистов по автоматизированному тестированию;
+- 🎨 UX/UI-дизайнеров;
+- 🧠 специалистов по алгоритмам, аналитике и AI;
+- 📡 специалистов по realtime-системам, WebSocket и связи;
+- 📚 технических писателей и специалистов по документации;
+- 🧭 поисковиков, координаторов и других специалистов, способных предложить практические улучшения.
+
+Не обязательно быть профессиональным разработчиком. **Хорошая идея, найденная ошибка, улучшение интерфейса, тестирование в полевых условиях, документация или практический опыт поисковых работ также могут сделать проект лучше.**
+
+Если вы видите проблему, которая может быть решена, или функцию, которая действительно нужна поисковым командам, создайте Issue или Pull Request и присоединяйтесь к разработке.
+
+### Как помочь проекту
+
+1. Изучите код и документацию.
+2. Создайте **Issue**, если нашли ошибку или хотите предложить улучшение.
+3. Для самостоятельной реализации создайте **Pull Request**.
+4. Обсуждайте архитектуру и решения вместе с другими участниками.
+5. Тестируйте KuKLA и сообщайте о проблемах.
+6. Помогайте улучшать документацию и инструкции.
+
+**Цель открытого проекта — не собрать как можно больше кода. Цель — собрать вокруг проекта людей с разным опытом и вместе создать надёжный инструмент, который способен приносить реальную пользу поисковым отрядам.**
+
+### 🇬🇧 Open Source Contribution
+
+**KuKLA is being developed as an open-source project.**
+
+We welcome developers, engineers, designers, testers, GIS specialists, security professionals, DevOps engineers, technical writers, search-and-rescue practitioners and anyone else who can help make the project better.
+
+We are especially interested in contributions from people working with:
+
+- Backend development — **TypeScript, Node.js, Fastify, PostgreSQL, Redis**;
+- Frontend/Desktop development — **React, Tauri, TypeScript**;
+- Mobile development — **Flutter, Dart, SQLite, GPS**;
+- GIS, mapping and geospatial data;
+- Information security and DevSecOps;
+- Linux, Docker and DevOps infrastructure;
+- QA and automated testing;
+- UX/UI design;
+- Algorithms, analytics and AI;
+- Realtime systems, WebSocket and communications;
+- Technical writing and documentation;
+- Search-and-rescue operations and field coordination.
+
+You do not have to be a professional developer to contribute. **A useful idea, a bug report, UX feedback, documentation improvement, field testing or practical search-and-rescue experience can be just as valuable.**
+
+If you see a problem worth solving or a feature that could make KuKLA more useful for search teams, open an Issue or submit a Pull Request and join the project.
+
+### Ways to contribute
+
+1. Explore the codebase and documentation.
+2. Open an **Issue** for bugs, questions or feature proposals.
+3. Submit a **Pull Request** for improvements and fixes.
+4. Discuss architecture and technical decisions with the community.
+5. Test KuKLA and report real-world problems.
+6. Help improve documentation and deployment instructions.
+
+**The goal of an open-source project is not to accumulate code. The goal is to bring together people with different expertise and build a reliable tool that can provide real value to search-and-rescue teams.**
+
+---
+
 ## 🇷🇺 О проекте
 
 **KuKLA** — это программная платформа для организации, координации и сопровождения поисковых операций. Проект создаётся с учётом реальной работы поисковых отрядов, где необходимо быстро распределять задачи, видеть участников и их GPS-позиции, обмениваться оперативной информацией и сохранять историю действий.
