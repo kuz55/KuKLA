@@ -36,3 +36,8 @@ export function canManageSearch(role: Role): boolean {
 export function canUpdateOwnAssignedTask(role: Role): boolean {
   return role === 'SEARCHER';
 }
+
+export function canUpdateTask(role: Role, taskAssigneeId: string | null | undefined, userId: string): boolean {
+  if (managementRoles.includes(role)) return true;
+  return role === 'SEARCHER' && taskAssigneeId === userId;
+}
