@@ -8,11 +8,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../server/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
-      - ../server/sql/002_seed.sql:/docker-entrypoint-initdb.d/002_seed.sql:ro
-      - ../server/sql/003_operational_domain.sql:/docker-entrypoint-initdb.d/003_operational_domain.sql:ro
-      - ../server/sql/004_organizations_resilience.sql:/docker-entrypoint-initdb.d/004_organizations_resilience.sql:ro
-      - ../server/sql/005_rbac_bootstrap.sql:/docker-entrypoint-initdb.d/005_rbac_bootstrap.sql:ro
     healthcheck:
       test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-kukla} -d ${POSTGRES_DB:-kukla}"]
       interval: 5s
@@ -32,6 +27,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-kukla}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-kukla}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set in .env}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-false}
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_started}
