@@ -17,7 +17,7 @@ desktop_validate:
     - npm run check
     - npm run build
 
-server_smoke:
+server_build:
   stage: validate
   image: node:22-alpine
   script:
