@@ -1,5 +1,22 @@
 stages: [validate, build]
 
+server_validate:
+  stage: validate
+  image: node:22-alpine
+  script:
+    - cd server
+    - npm ci
+    - npm test
+
+desktop_validate:
+  stage: validate
+  image: node:22-bookworm
+  script:
+    - cd desktop
+    - npm ci
+    - npm run check
+    - npm run build
+
 server_build:
   stage: validate
   image: node:22-alpine
@@ -7,21 +24,4 @@ server_build:
     - cd server
     - npm ci
     - npm run build
-
-server_test:
-  stage: validate
-  image: node:22-alpine
-  script:
-    - cd server
-    - npm ci
-    - npm run build
     - node --version
-
-desktop_build:
-  stage: build
-  image: node:22-bookworm
-  script:
-    - cd desktop
-    - npm ci
-    - npm run check
-    - npm run build
