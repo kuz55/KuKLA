@@ -33,3 +33,4 @@ Thumbs.db
 # Temporary
 tmp/
 .temp/
+desktop/tsconfig.tsbuildinfo
