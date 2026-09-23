@@ -38,7 +38,30 @@ jobs:
       - run: npm run migrate
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
+      # smoke-тесты проверяют живое приложение, поэтому сервер поднимается здесь же,
+      # на том же runner'е: Postgres уже доступен как service на localhost:5432.
+      - name: Start server
+        env:
+          DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
+          JWT_SECRET: ci-only-secret-not-for-production
+          PORT: '8080'
+        run: nohup node dist/index.js > server.log 2>&1 &
+      - name: Wait for server
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null; then
+              echo "server is up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become ready in 30s" >&2
+          exit 1
       - run: npm test
+        env:
+          KUKLA_TEST_URL: http://127.0.0.1:8080
+      - name: Show server log
+        if: failure()
+        run: cat server.log
 
   desktop:
     runs-on: ubuntu-latest
