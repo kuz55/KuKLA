@@ -4,12 +4,16 @@ import { execSync } from 'node:child_process';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
-// Helper: create test user via SQL (bypass API role restrictions)
+// Helper: create test user via SQL (bypass API role restrictions).
+// psql -t -c prints the uuid PLUS a command tag line ("INSERT 0 1"),
+// so we extract the uuid by regex instead of trimming the whole output.
 const createTestUser = (role, email, password = 'test-pass-123456') => {
   const name = `Test ${role}`;
   const sql = `INSERT INTO users(name,email,password_hash,role,active) VALUES('${name}','${email}',crypt('${password}',gen_salt('bf',12)),'${role}',true) RETURNING id`;
-  const result = execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -t -c "${sql}"`).toString().trim();
-  return result;
+  const out = execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -t -A -c "${sql}"`).toString();
+  const m = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (!m) throw new Error(`createTestUser: no UUID in psql output: ${JSON.stringify(out)}`);
+  return m[0];
 };
 
 // Helper: login and get token
@@ -165,22 +169,48 @@ test('PATCH /users: SEARCHER returns 403', async () => {
   assert.equal(r.status, 403);
 });
 
-test('PATCH /users: ADMIN cannot deactivate themselves', async () => {
+// canManageUser(ADMIN, ADMIN) === false → 403 fires BEFORE the self-guard 400.
+// An ADMIN cannot modify any admin-tier user, including themselves.
+test('PATCH /users: ADMIN cannot deactivate themselves (canManageUser(ADMIN,ADMIN)=false → 403)', async () => {
   const r = await fetch(`${base}/api/v1/users/${users.admin.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
     body: JSON.stringify({ active: false }),
   });
-  assert.equal(r.status, 400);
+  assert.equal(r.status, 403);
 });
 
-test('PATCH /users: ADMIN cannot change their own role', async () => {
+test('PATCH /users: ADMIN cannot change their own role (canManageUser(ADMIN,ADMIN)=false → 403)', async () => {
   const r = await fetch(`${base}/api/v1/users/${users.admin.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
     body: JSON.stringify({ role: 'LEADER' }),
   });
+  assert.equal(r.status, 403);
+});
+
+// The self-guard 400 branches are reachable only for SYSTEM_OWNER
+// (the only role with canManageUser(X, X) === true). Requests are rejected, DB state is untouched.
+test('PATCH /users: SYSTEM_OWNER cannot deactivate themselves (self-guard 400)', async () => {
+  const r = await fetch(`${base}/api/v1/users/${users.systemOwner.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ active: false }),
+  });
   assert.equal(r.status, 400);
+  const data = await r.json();
+  assert.equal(data.message, 'You cannot deactivate yourself');
+});
+
+test('PATCH /users: SYSTEM_OWNER cannot change their own role (self-guard 400)', async () => {
+  const r = await fetch(`${base}/api/v1/users/${users.systemOwner.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ role: 'SUPERADMIN' }),
+  });
+  assert.equal(r.status, 400);
+  const data = await r.json();
+  assert.equal(data.message, 'You cannot change your own role');
 });
 
 test('PATCH /users: SUPERADMIN cannot deactivate SYSTEM_OWNER (canManageUser returns false)', async () => {
@@ -189,7 +219,6 @@ test('PATCH /users: SUPERADMIN cannot deactivate SYSTEM_OWNER (canManageUser ret
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.superadmin}` },
     body: JSON.stringify({ active: false }),
   });
-  // canManageUser(SUPERADMIN, SYSTEM_OWNER) === false → Forbidden before any business check
   assert.equal(r.status, 403);
 });
 
@@ -203,23 +232,11 @@ test('PATCH /users: SYSTEM_OWNER role cannot be assigned via API (only bootstrap
   assert.equal(r.status, 403);
 });
 
-test('PATCH /users: ADMIN cannot deactivate the last active system administrator', async () => {
-  // Create a fresh admin, deactivate all other admins, then try to deactivate this one
-  const onlyAdminId = createTestUser('ADMIN', `only-${Date.now()}@test.local`);
-  // Temporarily deactivate every other admin-class user
-  await execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -c "UPDATE users SET active=false WHERE id<>'${onlyAdminId}' AND role IN ('SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN')"`);
-  try {
-    const r = await fetch(`${base}/api/v1/users/${onlyAdminId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
-      body: JSON.stringify({ active: false }),
-    });
-    assert.equal(r.status, 400);
-  } finally {
-    // Restore system state: re-activate super-tier users so later tests don't break
-    await execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -c "UPDATE users SET active=true WHERE id IN ('${users.systemOwner.id}','${users.superadmin.id}','${users.superuser.id}','${users.admin.id}')"`);
-  }
-});
+// Finding F-07: the "last active admin" guard is unreachable through the API.
+// The actor must itself be an active admin-class user (auth requires active=true),
+// and the guard counts admin-class users excluding only the TARGET — so the count
+// can never be 0 while a valid actor exists. Kept as a skipped test to document it.
+test('PATCH /users: last-active-admin guard (F-07: unreachable via API, see report)', { skip: 'F-07: actor is always an active admin-class user, count excluding target >= 1' }, () => {});
 
 // ============================================================================
 // Search isolation (canAccessSearch)
@@ -322,6 +339,7 @@ test('PATCH /tasks: LEADER can update any task in their search', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
     body: JSON.stringify({ title: 'Test Task' }),
   });
+  assert.equal(taskR.status, 200);
   const task = await taskR.json();
   const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
@@ -343,6 +361,7 @@ test('PATCH /tasks: SEARCHER can update their own assigned task', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
     body: JSON.stringify({ title: 'Assigned Task', assigneeId: users.searcher.id }),
   });
+  assert.equal(taskR.status, 200);
   const task = await taskR.json();
   const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
@@ -364,6 +383,7 @@ test('PATCH /tasks: SEARCHER cannot update task assigned to someone else', async
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
     body: JSON.stringify({ title: 'Other Task', assigneeId: users.leader.id }),
   });
+  assert.equal(taskR.status, 200);
   const task = await taskR.json();
   const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
@@ -385,6 +405,7 @@ test('PATCH /tasks: SEARCHER cannot reassign tasks', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
     body: JSON.stringify({ title: 'My Task', assigneeId: users.searcher.id }),
   });
+  assert.equal(taskR.status, 200);
   const task = await taskR.json();
   const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
@@ -401,6 +422,7 @@ test('PATCH /tasks: VIEWER returns 403 (no search access)', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
     body: JSON.stringify({ title: 'Task' }),
   });
+  assert.equal(taskR.status, 200);
   const task = await taskR.json();
   const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
