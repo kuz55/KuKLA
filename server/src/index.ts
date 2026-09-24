@@ -22,6 +22,8 @@ const DATABASE_URL = requiredSecret('DATABASE_URL', 'postgres://kukla:kukla@loca
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? (isProduction ? undefined : 'http://localhost:3000');
 if (!CORS_ORIGIN) throw new Error('CORS_ORIGIN must be configured');
 const allowPublicRegistration = process.env.ALLOW_PUBLIC_REGISTRATION === 'true' || (!isProduction && process.env.ALLOW_PUBLIC_REGISTRATION !== 'false');
+const loginRateLimit = Number(process.env.RATE_LIMIT_LOGIN_MAX ?? 5);
+if (!Number.isSafeInteger(loginRateLimit) || loginRateLimit < 1) throw new Error('RATE_LIMIT_LOGIN_MAX must be a positive integer');
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const app = Fastify({ logger: true });
@@ -106,7 +108,7 @@ app.get('/ready', async (_req, reply) => { try { await pool.query('SELECT 1'); r
 // аккаунту с разных IP, а честный пользователь с общим логином (email)
 // блокируется на всех.
 app.post('/api/v1/auth/login', {
-  config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  config: { rateLimit: { max: loginRateLimit, timeWindow: '1 minute' } },
 }, async (req) => {
   const b=z.object({login:z.string().min(1),password:z.string().min(1)}).parse(req.body);
   const r=await pool.query('SELECT id,name,email,phone,role,password_hash,active FROM users WHERE lower(email)=lower($1) OR phone=$1 LIMIT 1',[b.login]);

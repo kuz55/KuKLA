@@ -1,20 +1,10 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { closeTestDatabase, createTestUser, ensureTestOwner } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
-// Helper: create test user via SQL (bypass API role restrictions).
-// psql -t -c prints the uuid PLUS a command tag line ("INSERT 0 1"),
-// so we extract the uuid by regex instead of trimming the whole output.
-const createTestUser = (role, email, password = 'test-pass-123456') => {
-  const name = `Test ${role}`;
-  const sql = `INSERT INTO users(name,email,password_hash,role,active) VALUES('${name}','${email}',crypt('${password}',gen_salt('bf',12)),'${role}',true) RETURNING id`;
-  const out = execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -t -A -c "${sql}"`).toString();
-  const m = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  if (!m) throw new Error(`createTestUser: no UUID in psql output: ${JSON.stringify(out)}`);
-  return m[0];
-};
+after(closeTestDatabase);
 
 // Helper: login and get token
 const login = async (email, password) => {
@@ -62,11 +52,12 @@ const users = {
 // Create users in DB (skip systemOwner — only one active owner allowed)
 for (const [key, user] of Object.entries(users)) {
   if (key === 'systemOwner') continue;
-  users[key].id = createTestUser(user.role, user.email, user.password);
+  users[key].id = await createTestUser(user.role, user.email, user.password);
 }
 
 // Login all users
 const tokens = {};
+await ensureTestOwner(users.systemOwner.email, users.systemOwner.password);
 for (const [key, user] of Object.entries(users)) {
   tokens[key] = await login(user.email, user.password);
 }
@@ -131,7 +122,7 @@ test('GET /users: VIEWER returns 403', async () => {
 // ============================================================================
 
 test('PATCH /users: ADMIN can change LEADER role to COORDINATOR', async () => {
-  const targetId = createTestUser('LEADER', `target-${Date.now()}@test.local`);
+  const targetId = await createTestUser('LEADER', `target-${Date.now()}@test.local`);
   const r = await fetch(`${base}/api/v1/users/${targetId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
@@ -223,7 +214,7 @@ test('PATCH /users: SUPERADMIN cannot deactivate SYSTEM_OWNER (canManageUser ret
 });
 
 test('PATCH /users: SYSTEM_OWNER role cannot be assigned via API (only bootstrap)', async () => {
-  const targetId = createTestUser('ADMIN', `target2-${Date.now()}@test.local`);
+  const targetId = await createTestUser('ADMIN', `target2-${Date.now()}@test.local`);
   const r = await fetch(`${base}/api/v1/users/${targetId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.superadmin}` },
