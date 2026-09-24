@@ -26,11 +26,25 @@ KuKLA должна иметь управляемую, воспроизводим
 server/sql/
 ```
 
-и подключаются Docker Compose через:
+и применяются собственным migration runner:
 
 ```text
-/docker-entrypoint-initdb.d/
+server/src/migrate.ts
 ```
+
+Запуск:
+
+```bash
+cd server
+npm run migrate            # применить отсутствующие миграции
+npm run migrate -- --dry-run   # показать, что будет применено, ничего не меняя
+```
+
+В Docker-образе миграции выполняются при старте контейнера явной командой
+(`CMD ["sh","-c","node dist/migrate.js && node dist/index.js"]`), а не через
+`docker-entrypoint-initdb.d`. PostgreSQL в `infrastructure/docker-compose.yml`
+не монтирует SQL-файлы в initdb: единственный источник изменений схемы —
+migration runner.
 
 Текущая последовательность:
 
@@ -40,13 +54,13 @@ server/sql/
 003_operational_domain.sql
 004_organizations_resilience.sql
 005_rbac_bootstrap.sql
+006_security_integrity.sql
+007_disable_legacy_seed_accounts.sql
+008_backfill_search_creators.sql
 ```
 
-Такой механизм корректен для первичной инициализации нового PostgreSQL volume.
-
-Но он **не является полноценной системой миграций существующей БД**.
-
-Если PostgreSQL volume уже существует, появление нового SQL-файла в `docker-entrypoint-initdb.d` само по себе не гарантирует выполнение этого файла.
+Runner хранит применённые версии в таблице `schema_migrations`, поэтому
+повторный запуск на существующей БД не переигрывает уже применённые миграции.
 
 ---
 
@@ -165,9 +179,13 @@ ERROR
 
 # 6. Migration Runner
 
-Необходим отдельный механизм запуска миграций.
+Реализован как отдельный механизм запуска миграций:
 
-Целевой процесс:
+```text
+server/src/migrate.ts   →   npm run migrate
+```
+
+Процесс:
 
 ```text
 KuKLA Server / Migration command
@@ -179,36 +197,51 @@ KuKLA Server / Migration command
          PostgreSQL
 ```
 
-Runner должен:
+Runner выполняет:
 
 1. подключаться к PostgreSQL;
 2. получать список файлов миграций;
 3. сортировать их по версии;
-4. проверять историю;
-5. проверять checksum;
-6. применять только отсутствующие миграции;
-7. записывать результат в `schema_migrations`;
-8. завершаться с ошибкой при нарушении последовательности.
+4. проверять непрерывность нумерации версий (пропуск номера — ошибка);
+5. проверять историю (`schema_migrations`);
+6. проверять checksum уже применённых миграций;
+7. применять только отсутствующие миграции;
+8. записывать результат в `schema_migrations`;
+9. завершаться с ошибкой при нарушении последовательности или checksum.
+
+Перед применением runner печатает текущую версию схемы:
+
+```text
+Current schema version: 008
+```
+
+Режим `--dry-run` перечисляет миграции, которые были бы применены, и ничего
+не записывает в БД — используется как preflight перед production-миграцией.
 
 ---
 
 # 7. Запуск миграций
 
-Миграции не должны выполняться скрыто при каждом запуске приложения.
+Миграции не выполняются скрыто при каждом запуске приложения: запуск явный,
+отдельной командой.
 
-Предпочтительная модель:
+Модель:
 
 ```text
 docker compose
       ↓
-migration command
+migration command (node dist/migrate.js)
       ↓
 database updated
       ↓
 server start
 ```
 
-Это позволит явно контролировать изменение схемы.
+В контейнере это зафиксировано в `server/Dockerfile`:
+
+```text
+CMD ["sh","-c","node dist/migrate.js && node dist/index.js"]
+```
 
 ---
 
@@ -318,21 +351,45 @@ ROLLBACK
 
 ---
 
+## 006_security_integrity.sql
+
+Добавляет проверки целостности и защитные ограничения security-домена
+(пароли/учётки, целостность привилегированных ролей).
+
+---
+
+## 007_disable_legacy_seed_accounts.sql
+
+Отключает устаревшие development-аккаунты, оставшиеся от ранних seed-данных,
+не удаляя историю.
+
+---
+
+## 008_backfill_search_creators.sql
+
+Заполняет `created_by` у существующих поисков, чтобы организационная
+изоляция и авторство были определены для уже созданных записей.
+
+---
+
 # 10. Следующая миграция
 
 Следующей должна быть:
 
 ```text
-006_gis_foundation.sql
+009_gis_foundation.sql
 ```
 
-Но **до её создания** необходимо внедрить сам migration runner.
+(В документе ниже номера GIS/треков приведены как проектные; фактически
+номера 006–008 уже заняты security/backfill-миграциями, поэтому GIS
+сдвигается на 009 и далее.)
 
-Иначе шестая миграция будет снова зависеть от механизма начальной инициализации Docker.
+Migration runner к этому моменту уже внедрён, поэтому новая миграция больше
+не зависит от механизма начальной инициализации Docker.
 
 ---
 
-# 11. 006 — GIS
+# 11. GIS
 
 Цель:
 
@@ -416,7 +473,7 @@ invalid = 0
 
 ---
 
-# 14. 007 — GPS и треки
+# 14. 010 — GPS и треки
 
 Следующая миграция:
 
@@ -467,7 +524,7 @@ GPS-точка должна иметь возможность однозначн
 
 ---
 
-# 16. 008 — Sync Hardening
+# 16. 011 — Sync Hardening
 
 Миграция:
 
@@ -508,7 +565,7 @@ ACK
 
 ---
 
-# 17. 009 — Permissions
+# 17. 012 — Permissions
 
 Миграция:
 
@@ -540,7 +597,7 @@ role_permissions
 
 ---
 
-# 18. 010 — Organization Isolation
+# 18. 013 — Organization Isolation
 
 Миграция:
 
@@ -573,7 +630,7 @@ Resource
 
 ---
 
-# 19. 011 — Audit Hardening
+# 19. 014 — Audit Hardening
 
 Миграция:
 
@@ -615,7 +672,7 @@ SENSITIVE_DATA_EXPORT
 
 ---
 
-# 20. 012 — Notifications / Emergency
+# 20. 015 — Notifications / Emergency
 
 Миграция:
 
@@ -643,7 +700,7 @@ Emergency остаётся самостоятельным объектом.
 
 ---
 
-# 21. 013 — Database Integrity
+# 21. 016 — Database Integrity
 
 Миграция:
 
@@ -666,7 +723,7 @@ Emergency остаётся самостоятельным объектом.
 
 ---
 
-# 22. 014 — Cleanup
+# 22. 017 — Cleanup
 
 Миграция:
 
@@ -902,31 +959,37 @@ Monitoring
 
 # 31. Текущий порядок работ
 
-На данный момент порядок должен быть таким:
+На данный момент порядок такой:
 
 ```text
 1. DATABASE_ARCHITECTURE.md
           ↓
 2. DATABASE_MIGRATIONS.md
           ↓
-3. Migration Runner
+3. Migration Runner          — реализован (server/src/migrate.ts)
           ↓
-4. schema_migrations
+4. schema_migrations         — реализовано
           ↓
-5. migration tests
+5. migration tests           — реализовано (server/test/migrations.test.mjs)
           ↓
-6. 006_gis_foundation
+6. 006–008                   — применены (security integrity, legacy seed, backfill)
           ↓
-7. 007_tracks_and_gps
+7. 009_gis_foundation
           ↓
-8. 008_sync_hardening
+8. 010_tracks_and_gps
           ↓
-9. 009_permissions
+9. 011_sync_hardening
           ↓
-10. 010_organization_isolation
+10. 012_permissions
           ↓
-11. дальнейшие hardening migrations
+11. 013_organization_isolation
+          ↓
+12. дальнейшие hardening migrations
 ```
+
+Migration runner внедрён и покрыт тестами, поэтому дальнейшие миграции
+создаются обычным добавлением нового SQL-файла в `server/sql/` с непрерывным
+номером версии.
 
 ---
 
@@ -951,4 +1014,3 @@ migration runner
 ```
 
 без потери истории поисковых операций.
-йq
