@@ -1,6 +1,7 @@
 import Fastify, { FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import websocket from '@fastify/websocket';
 import pg from 'pg';
@@ -28,6 +29,13 @@ await app.register(cors, { origin: CORS_ORIGIN });
 await app.register(sensible);
 await app.register(jwt, { secret: JWT_SECRET });
 await app.register(websocket);
+// Общий мягкий лимит на всё приложение: защита от исчерпания пула соединений
+// и от зафлуживания логов. Жёсткие лимиты на auth-эндпоинты — ниже, в роутах.
+await app.register(rateLimit, {
+  global: true,
+  max: 300,
+  timeWindow: '1 minute',
+});
 
 type User = { id:string; name:string; email?:string; phone?:string; role:Role };
 declare module '@fastify/jwt' { interface FastifyJWT { user: User } }
@@ -93,7 +101,13 @@ async function audit(searchId: string|null, userId: string, type: string, payloa
 app.get('/health', async () => ({ ok:true, service:'kukla-server', version:'2.1.0', time:new Date().toISOString() }));
 app.get('/ready', async (_req, reply) => { try { await pool.query('SELECT 1'); return {ok:true}; } catch { return reply.code(503).send({ok:false}); } });
 
-app.post('/api/v1/auth/login', async (req) => {
+// Жёсткий лимит на подбор пароля: 5 попыток с одного IP в минуту.
+// Ключ по IP, а не по логину: иначе атакующий перебирает пароли к одному
+// аккаунту с разных IP, а честный пользователь с общим логином (email)
+// блокируется на всех.
+app.post('/api/v1/auth/login', {
+  config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+}, async (req) => {
   const b=z.object({login:z.string().min(1),password:z.string().min(1)}).parse(req.body);
   const r=await pool.query('SELECT id,name,email,phone,role,password_hash,active FROM users WHERE lower(email)=lower($1) OR phone=$1 LIMIT 1',[b.login]);
   if(!r.rowCount || !r.rows[0].active || !(await bcrypt.compare(b.password,r.rows[0].password_hash))) throw app.httpErrors.unauthorized('Invalid credentials');
@@ -103,7 +117,11 @@ app.post('/api/v1/auth/login', async (req) => {
   return {token,user:{id:u.id,name:u.name,email:u.email,phone:u.phone,role:u.role}};
 });
 
-app.post('/api/v1/auth/register', async (req) => {
+// Регистрация — тоже дорогая операция (bcrypt с cost 12), лимит против
+// массового создания аккаунтов.
+app.post('/api/v1/auth/register', {
+  config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+}, async (req) => {
   if (!allowPublicRegistration) throw app.httpErrors.forbidden('Public registration is disabled');
   const b=z.object({name:z.string().min(2),email:z.string().email(),phone:z.string().optional(),password:z.string().min(12)}).parse(req.body);
   const hash=await bcrypt.hash(b.password,12);
