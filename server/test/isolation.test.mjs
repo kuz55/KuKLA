@@ -1,18 +1,11 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { closeTestDatabase, createTestUser, ensureTestOwner } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
-const createTestUser = (role, email, password = 'test-pass-123456') => {
-  const name = `Test ${role}`;
-  const sql = `INSERT INTO users(name,email,password_hash,role,active) VALUES('${name}','${email}',crypt('${password}',gen_salt('bf',12)),'${role}',true) RETURNING id`;
-  const out = execSync(`docker exec -i infrastructure-postgres-1 psql -U kukla -d kukla -t -A -c "${sql}"`).toString();
-  const m = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  if (!m) throw new Error(`createTestUser: no UUID in psql output: ${JSON.stringify(out)}`);
-  return m[0];
-};
+after(closeTestDatabase);
 
 const login = async (email, password) => {
   const r = await fetch(`${base}/api/v1/auth/login`, {
@@ -34,9 +27,10 @@ const U = {
 };
 for (const [k, u] of Object.entries(U)) {
   if (k === 'owner') continue;
-  u.id = createTestUser(u.role, u.email, u.password);
+  u.id = await createTestUser(u.role, u.email, u.password);
 }
 const T = {};
+await ensureTestOwner(U.owner.email, U.owner.password);
 for (const [k, u] of Object.entries(U)) T[k] = await login(u.email, u.password);
 {
   const me = await fetch(`${base}/api/v1/me`, { headers: { Authorization: `Bearer ${T.owner}` } });
