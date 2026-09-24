@@ -1,10 +1,15 @@
 name: KuKLA CI
 
+# push: ['**'] — пайплайн гоняется на любой ветке, включая feature/* и qa/*.
+# Это нужно, чтобы каждую ветку плана видно было зелёной/красной до мержа в develop.
+# pull_request оставлен только для main/develop: иначе на ветку с открытым PR
+# приходилось бы по два запуска на каждый коммит (push + pull_request).
 on:
   push:
-    branches: [main, 'fix/**']
+    branches: ['**']
+    tags-ignore: ['**']
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   server:
@@ -34,19 +39,43 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
       - run: npm run migrate
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
-      # smoke-тесты проверяют живое приложение, поэтому сервер поднимается здесь же,
-      # на том же runner'е: Postgres уже доступен как service на localhost:5432.
-      - name: Start server
+      # Сначала проверяем строгий production-лимит отдельно, затем перезапускаем
+      # сервер с увеличенным тестовым порогом для объёмных API-наборов с одного IP.
+      - name: Start server for rate-limit test
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           JWT_SECRET: ci-only-secret-not-for-production
           PORT: '8080'
-        run: nohup node dist/index.js > server.log 2>&1 &
+        run: nohup node dist/index.js > server.log 2>&1 & echo $! > server.pid
       - name: Wait for server
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null; then
+              echo "server is up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become ready in 30s" >&2
+          exit 1
+      - name: Test rate limit
+        run: npm run test:rate-limit
+        env:
+          KUKLA_TEST_URL: http://127.0.0.1:8080
+      - name: Restart server for integration tests
+        env:
+          DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
+          JWT_SECRET: ci-only-secret-not-for-production
+          RATE_LIMIT_LOGIN_MAX: '100'
+          PORT: '8080'
+        run: |
+          kill $(cat server.pid)
+          nohup node dist/index.js > server.log 2>&1 & echo $! > server.pid
+      - name: Wait for restarted server
         run: |
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:8080/health > /dev/null; then
@@ -58,6 +87,7 @@ jobs:
           exit 1
       - run: npm test
         env:
+          DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
       - name: Show server log
         if: failure()
