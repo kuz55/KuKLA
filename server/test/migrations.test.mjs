@@ -21,8 +21,8 @@ const dbUrl = (database) => {
   return url.toString();
 };
 
-const runMigrate = (cwd, url) =>
-  spawnSync('node', [path.join(serverDir, 'dist', 'migrate.js')], {
+const runMigrate = (cwd, url, args = []) =>
+  spawnSync('node', [path.join(serverDir, 'dist', 'migrate.js'), ...args], {
     cwd,
     env: { ...process.env, DATABASE_URL: url },
     encoding: 'utf8',
@@ -50,10 +50,14 @@ const dropDb = async (database) => {
 
 const TEST_DB = 'kukla_mig_test';
 const TAMPER_DB = 'kukla_mig_tamper';
+const GAP_DB = 'kukla_mig_gap';
+const BROKEN_DB = 'kukla_mig_broken';
 
 after(async () => {
   await dropDb(TEST_DB);
   await dropDb(TAMPER_DB);
+  await dropDb(GAP_DB);
+  await dropDb(BROKEN_DB);
   await maintenancePool.end();
 });
 
@@ -84,6 +88,73 @@ test('migrations: clean DB applies all 8 migrations, schema complete, second run
     assert.match(second.stdout, /up to date/);
   } finally {
     await dropDb(TEST_DB);
+  }
+});
+
+test('migrations: dry-run reports pending migrations without applying them', async () => {
+  await recreateDb(TEST_DB);
+  try {
+    const dry = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.equal((dry.stdout.match(/Pending /g) || []).length, 8, 'dry-run should list all 8 migrations as pending');
+    assert.doesNotMatch(dry.stdout, /Applied /);
+    assert.match(dry.stdout, /would be applied/);
+
+    await withDatabase(TEST_DB, async (pool) => {
+      const migrations = await pool.query('SELECT count(*)::int AS count FROM schema_migrations');
+      assert.equal(migrations.rows[0].count, 0, 'dry-run must not record applied migrations');
+    });
+
+    const applied = runMigrate(serverDir, dbUrl(TEST_DB));
+    assert.equal(applied.status, 0, applied.stderr);
+    assert.equal((applied.stdout.match(/Applied /g) || []).length, 8);
+
+    const after = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
+    assert.equal(after.status, 0, after.stderr);
+    assert.match(after.stdout, /nothing to apply/);
+    assert.doesNotMatch(after.stdout, /Pending /);
+  } finally {
+    await dropDb(TEST_DB);
+  }
+});
+
+test('migrations: sequence gap is rejected before touching the database', async () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), 'kukla-mig-gap-'));
+  cpSync(path.join(serverDir, 'sql'), path.join(tmp, 'sql'), { recursive: true });
+  rmSync(path.join(tmp, 'sql', '004_organizations_resilience.sql'));
+  await recreateDb(GAP_DB);
+  try {
+    const result = runMigrate(tmp, dbUrl(GAP_DB));
+    assert.notEqual(result.status, 0, 'a gap in migration numbering must fail');
+    assert.match(`${result.stdout}${result.stderr}`, /sequence gap/i);
+    await withDatabase(GAP_DB, async (pool) => {
+      const migrations = await pool.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_name = 'schema_migrations'");
+      assert.equal(migrations.rows[0].count, 0, 'gap must be detected before any migration is applied');
+    });
+  } finally {
+    await dropDb(GAP_DB);
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('migrations: broken SQL rolls back and leaves no partial migration record', async () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), 'kukla-mig-broken-'));
+  cpSync(path.join(serverDir, 'sql'), path.join(tmp, 'sql'), { recursive: true });
+  const target = path.join(tmp, 'sql', '008_backfill_search_creators.sql');
+  writeFileSync(target, `${readFileSync(target, 'utf8')}\nTHIS IS NOT VALID SQL;\n`);
+  await recreateDb(BROKEN_DB);
+  try {
+    const result = runMigrate(tmp, dbUrl(BROKEN_DB));
+    assert.notEqual(result.status, 0, 'broken SQL must fail the run');
+    await withDatabase(BROKEN_DB, async (pool) => {
+      const migrations = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+      const versions = migrations.rows.map((row) => row.version);
+      assert.deepEqual(versions, ['001', '002', '003', '004', '005', '006', '007'], 'only migrations before the broken one may be recorded');
+      assert.ok(!versions.includes('008'), 'failed migration must not be recorded');
+    });
+  } finally {
+    await dropDb(BROKEN_DB);
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 
