@@ -1,8 +1,13 @@
 name: KuKLA CI
 
+# push: ['**'] — пайплайн гоняется на любой ветке, включая feature/* и qa/*.
+# Это нужно, чтобы каждую ветку плана видно было зелёной/красной до мержа в develop.
+# pull_request оставлен только для main/develop: иначе на ветку с открытым PR
+# приходилось бы по два запуска на каждый коммит (push + pull_request).
 on:
   push:
-    branches: [main, develop]
+    branches: ['**']
+    tags-ignore: ['**']
   pull_request:
     branches: [main, develop]
 
