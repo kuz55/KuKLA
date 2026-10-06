@@ -15,6 +15,9 @@ func env(values map[string]string) func(string) (string, bool) {
 }
 
 func TestResolveLinuxUsesXDGDirectoriesAndRejectsRelativeOverrides(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Linux path separators are covered by the Linux build runner")
+	}
 	paths, err := ResolveFor("linux", "/home/operator", env(map[string]string{
 		"XDG_CONFIG_HOME": "relative/config",
 		"XDG_DATA_HOME":   "/mnt/operator-data",
@@ -71,8 +74,10 @@ func TestEnsureCreatesOwnerOnlyApplicationDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o700 {
-		t.Fatalf("data directory mode = %o; want 700", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("data directory mode = %o; want 700", got)
+		}
 	}
 	if _, err := os.Stat(filepath.Dir(paths.Database)); err != nil {
 		t.Fatalf("database directory was not created: %v", err)
