@@ -1,0 +1,8 @@
+build/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.dump
+*.sock
+*.log
