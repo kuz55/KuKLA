@@ -147,6 +147,7 @@ gboolean engine_client_start(EngineClient *client, GError **error) {
     return FALSE;
 }
 
+#ifndef G_OS_WIN32
 static gboolean write_all(int fd, const gchar *data, gsize length, GError **error) {
     gsize written = 0;
     while (written < length) {
@@ -167,6 +168,7 @@ static gboolean write_all(int fd, const gchar *data, gsize length, GError **erro
     }
     return TRUE;
 }
+#endif
 
 gchar *engine_client_request(EngineClient *client, const gchar *method,
                              const gchar *path, const gchar *body,
