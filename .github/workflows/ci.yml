@@ -177,6 +177,7 @@ jobs:
         run: bash ../.github/scripts/package-windows.sh
       - name: Create ZIP archive
         shell: pwsh
+        working-directory: rebuild
         run: Compress-Archive -Path build/windows/KuKLA/* -DestinationPath build/KuKLA-windows-x64.zip -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
