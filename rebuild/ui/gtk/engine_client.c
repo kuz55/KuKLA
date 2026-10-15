@@ -8,6 +8,7 @@
 #include <windows.h>
 #else
 #include <errno.h>
+#include <glib/gstdio.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
