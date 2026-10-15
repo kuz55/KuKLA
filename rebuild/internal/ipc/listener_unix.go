@@ -53,3 +53,5 @@ func Listen(path string) (net.Listener, error) {
 	}
 	return listener, nil
 }
+
+func Remove(path string) error { return os.Remove(path) }

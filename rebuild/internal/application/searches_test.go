@@ -27,7 +27,7 @@ func (f *fakeUOW) WithinTransaction(_ context.Context, fn func(Repositories) err
 }
 
 type fakeSearches struct {
-	created domain.Search
+	created   domain.Search
 	createErr error
 }
 

@@ -147,18 +147,18 @@ func (t Task) Validate() error {
 // Position stores the original observation time separately from local receipt
 // time so delayed/offline positions can be replayed without rewriting history.
 type Position struct {
-	ID          ID             `json:"id"`
-	SearchID    ID             `json:"search_id"`
-	UserID      ID             `json:"user_id"`
-	Lat         float64        `json:"lat"`
-	Lng         float64        `json:"lng"`
-	AccuracyM   *float64       `json:"accuracy_m,omitempty"`
-	AltitudeM   *float64       `json:"altitude_m,omitempty"`
-	SpeedMPS    *float64       `json:"speed_mps,omitempty"`
-	RecordedAt  time.Time      `json:"recorded_at"`
-	ReceivedAt  time.Time      `json:"received_at"`
-	Source      PositionSource `json:"source"`
-	DeviceID    ID             `json:"device_id,omitempty"`
+	ID         ID             `json:"id"`
+	SearchID   ID             `json:"search_id"`
+	UserID     ID             `json:"user_id"`
+	Lat        float64        `json:"lat"`
+	Lng        float64        `json:"lng"`
+	AccuracyM  *float64       `json:"accuracy_m,omitempty"`
+	AltitudeM  *float64       `json:"altitude_m,omitempty"`
+	SpeedMPS   *float64       `json:"speed_mps,omitempty"`
+	RecordedAt time.Time      `json:"recorded_at"`
+	ReceivedAt time.Time      `json:"received_at"`
+	Source     PositionSource `json:"source"`
+	DeviceID   ID             `json:"device_id,omitempty"`
 }
 
 func (p Position) Validate() error {

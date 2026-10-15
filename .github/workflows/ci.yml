@@ -108,3 +108,71 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+
+  rebuild-go:
+    name: Go engine (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rebuild
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rebuild/go.mod
+          cache-dependency-path: rebuild/go.sum
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Build engine for runner platform
+        run: go build ./cmd/kukla-engine
+
+  rebuild-ui-linux:
+    name: GTK desktop UI (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential make pkg-config libgtk-4-dev libjson-glib-dev
+      - name: Compile GTK client
+        working-directory: rebuild
+        run: make build-ui
+
+  rebuild-ui-windows:
+    name: GTK portable desktop package (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rebuild
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-json-glib
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-ntldd
+      - name: Build desktop binaries
+        run: make ENGINE_NAME=kukla-engine.exe UI_NAME=kukla-ui.exe build-engine build-ui
+      - name: Bundle GTK runtime and create portable package
+        run: bash ../.github/scripts/package-windows.sh
+      - name: Create ZIP archive
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/KuKLA/* -DestinationPath build/KuKLA-windows-x64.zip -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KuKLA-windows-x64
+          path: rebuild/build/KuKLA-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14

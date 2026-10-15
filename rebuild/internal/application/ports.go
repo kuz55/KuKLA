@@ -2,10 +2,13 @@ package application
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/kuz55/KuKLA/rebuild/internal/domain"
 )
+
+var ErrNotFound = errors.New("record not found")
 
 // SearchFilter contains query-only options. Pagination and sorting semantics
 // are deliberately explicit so UI/API callers cannot accidentally request an
@@ -32,6 +35,11 @@ type MembershipRepository interface {
 
 type AuditRepository interface {
 	Append(context.Context, domain.AuditEvent) error
+}
+
+type ProfileRepository interface {
+	GetProfile(context.Context, domain.ID) (domain.UserProfile, error)
+	SaveProfile(context.Context, domain.UserProfile) error
 }
 
 type Repositories struct {

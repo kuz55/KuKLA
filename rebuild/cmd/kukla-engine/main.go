@@ -10,10 +10,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/kuz55/KuKLA/rebuild/internal/application"
 	"github.com/kuz55/KuKLA/rebuild/internal/config"
+	"github.com/kuz55/KuKLA/rebuild/internal/domain"
 	"github.com/kuz55/KuKLA/rebuild/internal/httpapi"
 	"github.com/kuz55/KuKLA/rebuild/internal/ipc"
 	"github.com/kuz55/KuKLA/rebuild/internal/platform"
+	"github.com/kuz55/KuKLA/rebuild/internal/storage/sqlite"
 )
 
 const version = "0.1.0-dev"
@@ -27,6 +30,7 @@ func main() {
 
 func run() error {
 	showVersion := flag.Bool("version", false, "print version and exit")
+	ipcEndpoint := flag.String("ipc-endpoint", "", "private IPC endpoint (defaults to the per-user endpoint)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
@@ -41,18 +45,34 @@ func run() error {
 	if err := paths.Ensure(); err != nil {
 		return fmt.Errorf("initialize application directories: %w", err)
 	}
+	store, err := sqlite.Open(context.Background(), paths.Database)
+	if err != nil {
+		return fmt.Errorf("initialize local database: %w", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			logger.Error("close local database", "error", err)
+		}
+	}()
+	searches := application.NewSearchApplication(store, store)
+	profiles := application.NewProfileService(store)
 
+	if *ipcEndpoint != "" {
+		paths.Socket = *ipcEndpoint
+	}
 	listener, err := ipc.Listen(paths.Socket)
 	if err != nil {
 		return fmt.Errorf("start private local IPC listener: %w", err)
 	}
 	defer func() {
 		_ = listener.Close()
-		_ = os.Remove(paths.Socket)
+		_ = ipc.Remove(paths.Socket)
 	}()
 
+	serverContext, stopServer := context.WithCancel(context.Background())
+	defer stopServer()
 	server := &http.Server{
-		Handler:           httpapi.NewHealthHandler(version),
+		Handler:           httpapi.NewHandler(version, searches, profiles, domain.ID("local-installation"), stopServer),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
@@ -65,7 +85,7 @@ func run() error {
 	}()
 
 	logger.Info("KuKLA local engine ready", "version", version, "transport", listener.Addr().Network())
-	ctx, stop := platform.ShutdownContext(context.Background())
+	ctx, stop := platform.ShutdownContext(serverContext)
 	defer stop()
 
 	select {
