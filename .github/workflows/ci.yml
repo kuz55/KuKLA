@@ -146,12 +146,12 @@ jobs:
   rebuild-ui-windows:
     name: GTK portable desktop package (Windows)
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: rebuild
-        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rebuild/go.mod
+          cache-dependency-path: rebuild/go.sum
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -164,8 +164,12 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-ntldd
       - name: Build desktop binaries
+        working-directory: rebuild
+        shell: msys2 {0}
         run: make ENGINE_NAME=kukla-engine.exe UI_NAME=kukla-ui.exe build-engine build-ui
       - name: Bundle GTK runtime and create portable package
+        working-directory: rebuild
+        shell: msys2 {0}
         run: bash ../.github/scripts/package-windows.sh
       - name: Create ZIP archive
         shell: pwsh
