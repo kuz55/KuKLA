@@ -72,7 +72,10 @@ gtk-theme-name=Adwaita
 gtk-font-name=Segoe UI 10
 EOF
 
-"$mingw_prefix/bin/glib-compile-schemas.exe" "$bundle/share/glib-2.0/schemas"
+schema_dir="$bundle/share/glib-2.0/schemas"
+if [[ -d "$schema_dir" ]]; then
+  "$mingw_prefix/bin/glib-compile-schemas.exe" "$schema_dir"
+fi
 
 cat > "$bundle/KuKLA.cmd" <<'EOF'
 @echo off
