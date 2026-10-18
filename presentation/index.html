@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KuKLA — координация поисково-спасательных работ | Присоединяйтесь к команде</title>
+<meta name="description" content="KuKLA — open-source приложение для групп, занимающихся поиском пропавших людей. Приглашаем разработчиков в команду.">
+<style>
+  :root{
+    --orange:#e8622c;
+    --orange-dark:#c94f1f;
+    --orange-soft:#fdf1ea;
+    --orange-line:#f4d3c2;
+    --ink:#1f2328;
+    --ink-2:#4a525c;
+    --muted:#6e7681;
+    --line:#e4e6e9;
+    --line-soft:#eef0f2;
+    --bg:#ffffff;
+    --bg-alt:#f7f8f9;
+    --bg-grey:#f2f3f5;
+    --radius:14px;
+    --maxw:1080px;
+    --shadow:0 1px 2px rgba(31,35,40,.04), 0 8px 24px rgba(31,35,40,.06);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{line-height:1.25;margin:0;font-weight:800;letter-spacing:-.02em}
+  p{margin:0}
+  a{color:var(--orange);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+
+  /* ---------- header ---------- */
+  header.top{
+    position:sticky;top:0;z-index:50;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .top .wrap{display:flex;align-items:center;justify-content:space-between;height:64px;gap:16px}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand b{font-size:22px;font-weight:900;letter-spacing:-.04em;color:var(--ink)}
+  .brand span{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  nav.top-nav{display:flex;gap:4px;flex-wrap:wrap}
+  nav.top-nav a{
+    color:var(--ink-2);font-size:14px;font-weight:600;
+    padding:8px 12px;border-radius:8px;text-decoration:none;
+  }
+  nav.top-nav a:hover{background:var(--bg-grey);color:var(--ink);text-decoration:none}
+  @media(max-width:820px){nav.top-nav{display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding:76px 0 64px;
+    background:
+      radial-gradient(900px 340px at 12% -10%, var(--orange-soft) 0%, rgba(253,241,234,0) 70%),
+      var(--bg);
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--orange-dark);margin-bottom:20px;
+  }
+  .eyebrow::before{content:"";width:22px;height:2px;background:var(--orange);border-radius:2px}
+  .hero h1{font-size:clamp(32px,5vw,50px);max-width:18ch}
+  .hero .lead{margin-top:20px;font-size:18px;color:var(--ink-2);max-width:64ch}
+  .badges{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}
+  .badge{
+    font-size:13px;font-weight:600;color:var(--ink-2);
+    background:var(--bg-alt);border:1px solid var(--line);
+    padding:7px 13px;border-radius:999px;
+  }
+  .badge.accent{background:var(--orange-soft);border-color:var(--orange-line);color:var(--orange-dark)}
+
+  /* ---------- sections ---------- */
+  section{padding:64px 0;border-bottom:1px solid var(--line-soft)}
+  section.alt{background:var(--bg-alt)}
+  .sec-head{max-width:70ch;margin-bottom:36px}
+  .sec-head .kicker{
+    font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--orange);margin-bottom:12px;
+  }
+  .sec-head h2{font-size:clamp(24px,3vw,32px)}
+  .sec-head p{margin-top:14px;color:var(--muted);font-size:16px}
+
+  /* ---------- cards ---------- */
+  .grid{display:grid;gap:18px}
+  .grid.c3{grid-template-columns:repeat(3,1fr)}
+  .grid.c2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:900px){.grid.c3{grid-template-columns:1fr 1fr}}
+  @media(max-width:640px){.grid.c3,.grid.c2{grid-template-columns:1fr}}
+  .card{
+    background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);
+  }
+  .card h3{font-size:18px;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:15px}
+  .card .icon{
+    width:40px;height:40px;border-radius:10px;display:grid;place-items:center;
+    background:var(--orange-soft);color:var(--orange-dark);
+    font-size:19px;margin-bottom:16px;border:1px solid var(--orange-line);
+  }
+
+  /* ---------- team ---------- */
+  .team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  @media(max-width:640px){.team-grid{grid-template-columns:1fr}}
+  .person{
+    display:flex;gap:16px;align-items:center;
+    background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;box-shadow:var(--shadow);
+  }
+  .avatar{
+    flex:0 0 52px;width:52px;height:52px;border-radius:50%;
+    display:grid;place-items:center;font-weight:800;font-size:18px;
+    background:var(--orange);color:#fff;
+  }
+  .person b{display:block;font-size:16px}
+  .person small{display:block;color:var(--muted);font-size:14px}
+  .person .handle{color:var(--orange-dark);font-size:13px;font-weight:600}
+
+  /* ---------- roles ---------- */
+  .role{
+    display:flex;gap:16px;align-items:flex-start;
+    background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);
+    transition:border-color .15s ease, transform .15s ease;
+  }
+  .role:hover{border-color:var(--orange-line);transform:translateY(-2px)}
+  .role .dot{
+    flex:0 0 10px;width:10px;height:10px;border-radius:50%;
+    background:var(--orange);margin-top:8px;
+  }
+  .role b{font-size:16px;display:block}
+  .role small{color:var(--muted);font-size:14px}
+  .role .stack{color:var(--orange-dark);font-weight:600;font-size:13px}
+
+  /* ---------- sprint tasks ---------- */
+  .track{margin-top:8px}
+  .track > details{
+    background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
+    margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow);
+  }
+  .track > details[open]{border-color:var(--orange-line)}
+  .track summary{
+    list-style:none;cursor:pointer;padding:20px 24px;
+    display:flex;align-items:center;gap:16px;
+  }
+  .track summary::-webkit-details-marker{display:none}
+  .track summary .tag{
+    flex:0 0 auto;font-size:12px;font-weight:800;letter-spacing:.06em;
+    padding:5px 10px;border-radius:7px;
+    background:var(--orange-soft);color:var(--orange-dark);border:1px solid var(--orange-line);
+    text-transform:uppercase;
+  }
+  .track summary .t-title{font-size:17px;font-weight:700;flex:1}
+  .track summary .chev{
+    flex:0 0 auto;color:var(--muted);font-size:13px;transition:transform .18s ease;
+  }
+  .track details[open] summary .chev{transform:rotate(90deg)}
+  .track .body{padding:0 24px 22px 24px}
+  .track .body > p.intro{color:var(--muted);margin-bottom:18px}
+  .item{
+    border-top:1px solid var(--line-soft);padding:16px 0;
+    display:grid;grid-template-columns:22px 1fr;gap:12px;
+  }
+  .item:first-of-type{border-top:0}
+  .item .num{
+    font-size:12px;font-weight:800;color:var(--orange);
+    border:1px solid var(--orange-line);background:var(--orange-soft);
+    width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+    margin-top:2px;
+  }
+  .item b{display:block;font-size:15px;margin-bottom:4px}
+  .item p{color:var(--muted);font-size:14.5px}
+  .item code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:13px;background:var(--bg-grey);
+    padding:1px 6px;border-radius:5px;color:var(--ink-2);
+  }
+
+  /* ---------- coming soon ---------- */
+  .soon{display:flex;flex-wrap:wrap;gap:12px}
+  .soon span{
+    font-size:14px;font-weight:600;
+    border:1px dashed var(--orange-line);background:var(--orange-soft);
+    color:var(--orange-dark);padding:10px 16px;border-radius:10px;
+  }
+
+  /* ---------- cta ---------- */
+  .cta{
+    background:var(--ink);color:#fff;border-bottom:none;
+  }
+  .cta h2{color:#fff}
+  .cta p{color:#c9ced6;margin-top:14px;max-width:60ch}
+  .cta .btn{
+    display:inline-block;margin-top:26px;
+    background:var(--orange);color:#fff;font-weight:700;
+    padding:13px 24px;border-radius:10px;text-decoration:none;
+  }
+  .cta .btn:hover{background:var(--orange-dark);text-decoration:none}
+
+  footer{padding:34px 0;background:var(--bg-alt)}
+  footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+  footer small{color:var(--muted);font-size:13px}
+
+  /* ---------- reveal ---------- */
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease, transform .5s ease}
+  .reveal.on{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><b>KuKLA</b><span>координация поисков</span></div>
+    <nav class="top-nav">
+      <a href="#about">О проекте</a>
+      <a href="#done">Что сделано</a>
+      <a href="#team">Команда</a>
+      <a href="#roles">Кого ищем</a>
+      <a href="#sprint">Спринт</a>
+      <a href="#soon">Далее</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Некоммерческий open-source проект</div>
+    <h1>Приложение для групп, которые ищут пропавших людей</h1>
+    <p class="lead">
+      KuKLA объединяет мессенджер, навигатор и программу координации поисков
+      в одно приложение — и работает в условиях нестабильной связи, когда
+      каждая минута и каждая метка на карте имеют значение.
+    </p>
+    <div class="badges">
+      <span class="badge accent">Open Source</span>
+      <span class="badge">Offline-first</span>
+      <span class="badge">Desktop · Mobile · Server</span>
+      <span class="badge">Приглашаем в команду</span>
+    </div>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<section id="about">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">О проекте</div>
+      <h2>Координация там, где нет связи</h2>
+      <p>
+        Поисково-спасательные отряды работают в лесу, в поле и в горах — там, где
+        мобильный интернет пропадает на часы. Обычные мессенджеры и карты в таких
+        условиях теряют данные. KuKLA создаётся именно для этого сценария.
+      </p>
+    </div>
+    <div class="grid c3">
+      <div class="card">
+        <div class="icon">💬</div>
+        <h3>Мессенджер</h3>
+        <p>Обмен сообщениями и оперативными событиями внутри поисковой группы.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🗺️</div>
+        <h3>Навигатор</h3>
+        <p>Карта, GPS-треки участников, точки происшествия и зацепок.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📡</div>
+        <h3>Координация</h3>
+        <p>Задачи, участники, сектора и синхронизация при нестабильной связи.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DONE -->
+<section id="done" class="alt">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">Что уже сделано</div>
+      <h2>Работающие прототипы всех трёх частей</h2>
+      <p>Проект не начинается с нуля: есть база, на которую можно вставать.</p>
+    </div>
+    <div class="grid c3">
+      <div class="card">
+        <div class="icon">🖥️</div>
+        <h3>Desktop</h3>
+        <p>Tauri + React. Штабной интерфейс: карта, задачи, участники, метрики поиска.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📱</div>
+        <h3>Mobile</h3>
+        <p>Flutter. Полевой клиент: GPS-трекинг, офлайн-очередь, локальный кэш.</p>
+      </div>
+      <div class="card">
+        <div class="icon">⚙️</div>
+        <h3>Server</h3>
+        <p>Fastify + TypeScript + PostgreSQL. REST API, RBAC, миграции, метрики.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TEAM -->
+<section id="team">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">Команда проекта</div>
+      <h2>Кто уже в деле</h2>
+    </div>
+    <div class="team-grid">
+      <div class="person">
+        <div class="avatar">А</div>
+        <div>
+          <b>Алексей <span class="handle">(elverato)</span></b>
+          <small>Product Owner, QA Engineer</small>
+        </div>
+      </div>
+      <div class="person">
+        <div class="avatar">К</div>
+        <div>
+          <b>Константин <span class="handle">(shaylakr)</span></b>
+          <small>DevOps, GIS Specialist</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ROLES -->
+<section id="roles" class="alt">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">Кого ищем сейчас</div>
+      <h2>Четыре роли в активный набор</h2>
+      <p>
+        Мы не против нейросетей и вайбкодинга — наоборот. Но ждём специалистов,
+        которые понимают, что делает их код, и умеют находить и исправлять
+        собственные ошибки.
+      </p>
+    </div>
+    <div class="grid c2">
+      <div class="role">
+        <div class="dot"></div>
+        <div>
+          <b>Backend Developer</b>
+          <span class="stack">Fastify · TypeScript</span>
+          <small>Realtime-канал, Redis Pub/Sub, WebSocket-комнаты.</small>
+        </div>
+      </div>
+      <div class="role">
+        <div class="dot"></div>
+        <div>
+          <b>Mobile Developer</b>
+          <span class="stack">Flutter</span>
+          <small>Офлайн-синхронизация, идемпотентность, разрешение конфликтов.</small>
+        </div>
+      </div>
+      <div class="role">
+        <div class="dot"></div>
+        <div>
+          <b>Frontend Developer</b>
+          <span class="stack">Tauri · React</span>
+          <small>Realtime-подписка, история трека, кластеризация маркеров.</small>
+        </div>
+      </div>
+      <div class="role">
+        <div class="dot"></div>
+        <div>
+          <b>Project Manager / Scrum Master</b>
+          <span class="stack">Процессы · Планирование</span>
+          <small>Спринты, приоритеты, координация распределённой команды.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SPRINT -->
+<section id="sprint">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">Задачи на следующий спринт</div>
+      <h2>Что предстоит сделать</h2>
+      <p>Пять направлений — от инфраструктуры до тестирования. Раскройте любое, чтобы увидеть детали.</p>
+    </div>
+
+    <div class="track">
+
+      <!-- Backend -->
+      <details open>
+        <summary>
+          <span class="tag">⚙️ Backend</span>
+          <span class="t-title">Redis Pub/Sub, WebSocket-комнаты и Reconnect</span>
+          <span class="chev">▶</span>
+        </summary>
+        <div class="body">
+          <p class="intro">
+            Сейчас WebSocket в KuKLA — это просто «эхо-пинг», он не доставляет данные.
+            Задача — сделать его полноценным каналом реального времени.
+          </p>
+          <div class="item">
+            <div class="num">1</div>
+            <div>
+              <b>Redis Pub/Sub (издатель/подписчик)</b>
+              <p>Сервер, приняв новую GPS-точку, «публикует» её в Redis. Другие экземпляры
+              сервера, подписанные на канал, получают сообщение и передают своим клиентам.
+              Это позволяет масштабировать сервер горизонтально.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">2</div>
+            <div>
+              <b>WebSocket-комнаты по <code>search_id</code></b>
+              <p>Чтобы не спамить всех клиентов всеми событиями, соединения группируются
+              в комнаты. Клиент подключается к комнате конкретного поиска, и сервер шлёт
+              обновления (GPS-точки, изменения задач) только в неё.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">3</div>
+            <div>
+              <b>Reconnect с экспоненциальной задержкой и джиттером</b>
+              <p>Критично для нестабильной связи. Вместо попытки каждую секунду интервал
+              растёт (1с, 2с, 4с, 8с…), а случайная задержка не даёт всем клиентам
+              переподключаться одновременно.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Mobile -->
+      <details>
+        <summary>
+          <span class="tag">📱 Mobile</span>
+          <span class="t-title">Idempotency, Identity и конфликты</span>
+          <span class="chev">▶</span>
+        </summary>
+        <div class="body">
+          <p class="intro">Решаем проблему дублирования данных и потери информации при работе в офлайне.</p>
+          <div class="item">
+            <div class="num">1</div>
+            <div>
+              <b>Idempotency keys</b>
+              <p>Клиент генерирует UUID для каждой операции. Если связь пропала и отправка
+              повторяется, уходит тот же ключ — сервер распознаёт дубликат и не создаёт
+              повторную запись.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">2</div>
+            <div>
+              <b>Device identity</b>
+              <p>Однозначная идентификация устройства — для безопасности и корректной
+              синхронизации, когда устройством пользуются несколько поисковиков.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">3</div>
+            <div>
+              <b>Обработка конфликтов</b>
+              <p>Если двое офлайн изменили один объект, нужна стратегия: «последний
+              изменивший побеждает» либо сохранение обеих версий для ручного разрешения
+              координатором.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">4</div>
+            <div>
+              <b>Убрать дефолтные креды</b>
+              <p>В LoginScreen зашиты логин и пароль <code>searcher@kukla.local</code>.
+              Удобно для разработки, недопустимо в релизе — удаляем.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Frontend -->
+      <details>
+        <summary>
+          <span class="tag">💻 Frontend</span>
+          <span class="t-title">Realtime, история трека и кластеризация</span>
+          <span class="chev">▶</span>
+        </summary>
+        <div class="body">
+          <p class="intro">Улучшения Desktop-клиента, которые сделают работу штаба удобнее.</p>
+          <div class="item">
+            <div class="num">1</div>
+            <div>
+              <b>Подписка на realtime</b>
+              <p>Сейчас трек обновляется по кнопке. Подключаем клиент к каналу
+              <code>/api/v1/ws</code>, чтобы новые GPS-точки и задачи приходили сразу.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">2</div>
+            <div>
+              <b>История трека за период</b>
+              <p>API уже поддерживает параметр <code>?since=</code>. Добавляем в UI выбор
+              периода («за последний час», «за всё время»), чтобы видеть весь маршрут.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">3</div>
+            <div>
+              <b>Кластеризация маркеров</b>
+              <p>Много точек превращают карту в «кашу». Кластеризация группирует близкие
+              маркеры и раскрывает их по клику — через
+              <code>react-leaflet-cluster</code> и <code>leaflet.markercluster</code>.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- DevOps -->
+      <details>
+        <summary>
+          <span class="tag">🛠️ DevOps</span>
+          <span class="t-title">Redis, мониторинг и логи</span>
+          <span class="chev">▶</span>
+        </summary>
+        <div class="body">
+          <p class="intro">Надёжность и наблюдаемость инфраструктуры.</p>
+          <div class="item">
+            <div class="num">1</div>
+            <div>
+              <b>Реактивация Redis</b>
+              <p>Сервер уже включает Redis в docker-compose, но код его не использует.
+              Настраиваем Redis как брокер сообщений для pub/sub.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">2</div>
+            <div>
+              <b>Мониторинг (Prometheus + Grafana)</b>
+              <p>Prometheus собирает метрики — запросы в секунду, задержку, память;
+              Grafana визуализирует их в дашбордах.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">3</div>
+            <div>
+              <b>Логи (Loki)</b>
+              <p>Логи собираются в одном месте вместо ручного обхода контейнеров —
+              их можно фильтровать и искать. Обычно вместе с Promtail.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- QA -->
+      <details>
+        <summary>
+          <span class="tag">🧪 QA</span>
+          <span class="t-title">Тестирование синхронизации и Reconnect</span>
+          <span class="chev">▶</span>
+        </summary>
+        <div class="body">
+          <p class="intro">Проверяем, что все механизмы выше действительно работают.</p>
+          <div class="item">
+            <div class="num">1</div>
+            <div>
+              <b>Тесты offline/online sync</b>
+              <p>Сценарии: приложение офлайн, пользователь ставит точки, связь появляется —
+              и данные синхронизируются. Проверяем, что очередь команд сохраняется
+              и обрабатывается правильно.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">2</div>
+            <div>
+              <b>Retry без дублей</b>
+              <p>Прямая проверка идемпотентности: клиент отправляет точку, не получает
+              подтверждения и отправляет снова. Сервер должен распознать дубликат по ключу.</p>
+            </div>
+          </div>
+          <div class="item">
+            <div class="num">3</div>
+            <div>
+              <b>Тесты reconnect</b>
+              <p>При разрыве соединения клиент переподключается с растущей задержкой
+              и восстанавливает состояние после подключения.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- SOON -->
+<section id="soon" class="alt">
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <div class="kicker">Скоро потребуются</div>
+      <h2>Роли следующей волны</h2>
+      <p>А также всегда рады QA, DevOps и GIS-специалистам.</p>
+    </div>
+    <div class="soon">
+      <span>Security Engineer</span>
+      <span>UX/UI Designer</span>
+      <span>BSA</span>
+      <span>QA</span>
+      <span>DevOps</span>
+      <span>GIS Specialist</span>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <div class="wrap reveal">
+    <div class="kicker" style="color:var(--orange);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:12px">Присоединяйтесь</div>
+    <h2>Есть опыт — и желание сделать что-то важное?</h2>
+    <p>
+      KuKLA — некоммерческий open-source проект. Здесь код помогает людям
+      находить людей. Если вам откликается — мы будем рады видеть вас в команде.
+    </p>
+    <a class="btn" href="#roles">Посмотреть открытые роли</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <small>KuKLA · Некоммерческий open-source проект координации поисково-спасательных работ</small>
+    <small>Desktop · Mobile · Server</small>
+  </div>
+</footer>
+
+<script>
+  // Плавное появление секций
+  const items = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('on'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    items.forEach((el) => io.observe(el));
+  } else {
+    items.forEach((el) => el.classList.add('on'));
+  }
+</script>
+</body>
+</html>
