@@ -32,3 +32,16 @@ Before real rescue operations:
 - Add durable realtime event fan-out via Redis/WebSocket.
 - Validate background GPS behavior on target Android/iOS versions.
 - Perform security and field acceptance testing.
+
+## Target stack transition
+
+The project is transitioning to a Go/C desktop client. Current position:
+
+- `server/` (Fastify/TypeScript, PostgreSQL) remains the authoritative contract and is extended, not replaced.
+- `rebuild/` (Go/C, GTK4, SQLite) already performs a local create/list/read search workflow, stores data in SQLite, packages a portable Windows build in CI, and implements the local questionnaire and role catalog.
+- `desktop/` (Tauri/React) is **deprecated**; it stays as a behavior reference until the Go/C client reaches parity.
+- `mobile/` (Flutter) remains the field client.
+
+Not yet implemented in the Go/C client: phone/OTP sign-in and server connection, authenticated role assignment and review, task and group screens, maps and offline map packages, request intake, media pipeline, notifications, synchronization, backup/restore and database encryption.
+
+Data ownership between server and client is fixed in [ADR-0001](adr/0001-data-ownership-server-vs-local.md); the per-entity breakdown is in [`DATA_OWNERSHIP.md`](DATA_OWNERSHIP.md).
