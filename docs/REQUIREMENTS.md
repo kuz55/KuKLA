@@ -26,6 +26,12 @@ The system must provide a shared operational picture for command staff and field
 
 ### Identity and access
 - Authentication and session management.
+- Phone number and one-time code (OTP) sign-in as the primary field credential.
+- Email and password sign-in remains available for organizations that operate without SMS.
+- Public self-registration is disabled. Accounts are created by invitation or by an administrator.
+- Phone numbers are normalized and stored in E.164 format.
+- One-time codes are single-use, time-limited, rate-limited and audited. Provider secrets are supplied through environment variables and are never committed to the repository, written to logs, or embedded in the client.
+- The session token is stored in the operating system credential store on desktop clients.
 - Server-side RBAC.
 - Least-privilege access to operational and personal data.
 - Audit trail for security-sensitive actions.
@@ -56,7 +62,7 @@ The system must provide a shared operational picture for command staff and field
 ### GIS
 - Incident and last-known points.
 - Teams and live positions.
-- Tracks.
+- Tracks. Any user with access to a search operation may view the tracks of its members; access is governed by membership and role in the operation, not by point authorship.
 - Sectors and assignments.
 - Clues and hazards.
 - Coverage/POD as a planned capability.
@@ -78,6 +84,8 @@ The system must provide a shared operational picture for command staff and field
 - Clues and observations.
 - Photos and attachments.
 - Hypotheses and decision support as a future module.
+
+Medical notes on a search subject are not collected or displayed until data-at-rest encryption is in place.
 
 ### Communications
 - Operational notifications.
@@ -115,6 +123,17 @@ AI may summarize, classify, detect inconsistencies and provide recommendations. 
 - Production deployment must support backup and tested restore.
 - The application must remain usable under stress and degraded connectivity.
 
+## Data ownership
+
+Where each domain entity lives — server, client or both — is fixed by [ADR-0001](adr/0001-data-ownership-server-vs-local.md) and summarized in [`DATA_OWNERSHIP.md`](DATA_OWNERSHIP.md). The server is the source of truth; the local database is a cache plus an outbound command queue and never stores authorizing roles.
+
 ## Current implementation gap
 
 The repository already implements the MVP foundation: authentication/RBAC, searches, members, tasks, events, GPS ingestion, map display, mobile local storage and an offline command queue. The operational-domain migration adds the persistent data model for the next capability layer, but API, UI and field workflows still need incremental implementation and tests.
+
+Two client implementations exist in parallel:
+
+- `server/` (Fastify/TypeScript, PostgreSQL) is the authoritative contract and is extended, not replaced.
+- `rebuild/` (Go/C, GTK4, SQLite) is the target desktop client. It implements a local workflow but is not yet connected to the server, and phone sign-in, role assignment, tasks, groups, intake, maps, media, notifications and synchronization are not implemented there yet.
+
+`desktop/` (Tauri/React) is deprecated and is retained as a behavior reference until the Go/C client reaches feature parity.
