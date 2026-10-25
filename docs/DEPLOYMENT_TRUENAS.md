@@ -43,7 +43,7 @@ Desktop-клиент остаётся Tauri-приложением. Для produ
 Создайте приложение VK ID с платформой Web и укажите точный Redirect URL:
 
 ```text
-https://kukla-api.tail0c73da.ts.net:8443/api/v1/auth/vk/callback
+https://kukla-api.tail0c73da.ts.net
 ```
 
 Идентификатор созданного приложения KuKLA: `54853560`; укажите его в `VK_ID_CLIENT_ID`. Клиентский секрет VK ID для текущего PKCE-потока не используется. Регистрацию новых пользователей включайте через `VK_ID_ALLOW_REGISTRATION=true` только после проверки приложения. Новые учётные записи получают роль `SEARCHER`; VK ID не связывает профиль с существующим пользователем по email или телефону.
@@ -76,16 +76,16 @@ sudo docker compose --env-file .env -f docker-compose.truenas.yml -f docker-comp
 Проверьте, что контейнеры `server`, `public-api-proxy` и `tailscale-api` запущены. В оболочке контейнера `tailscale-api` включите приватный API и публичный маршрут авторизации:
 
 ```sh
-tailscale serve --bg --https=443 http://127.0.0.1:8081
-tailscale funnel --bg --https=8443 http://127.0.0.1:8080
+tailscale serve --bg --https=8443 http://127.0.0.1:8081
+tailscale funnel --bg --https=443 http://127.0.0.1:8080
 tailscale serve status
 tailscale funnel status
 ```
 
-Funnel публикует только Nginx-порт 8080, где разрешены маршруты VK ID. Tailscale Serve на HTTPS 443 ведёт к полному API через tailnet. Настройте ACL tailnet так, чтобы доступ к `kukla-api:443` был только у ваших пользователей и устройств. Не включайте host networking и не публикуйте порты NAS, SSH, PostgreSQL или Redis.
+Funnel публикует только Nginx-порт 8080, где разрешён корневой callback и маршруты авторизации VK ID. Tailscale Serve на HTTPS 8443 ведёт к полному API через tailnet. Настройте ACL tailnet так, чтобы доступ к `kukla-api:8443` был только у ваших пользователей и устройств. Не включайте host networking и не публикуйте порты NAS, SSH, PostgreSQL или Redis.
 
 5. После успешного входа sidecar удалите значение `TS_API_AUTHKEY` из `.env`; состояние узла хранится в томе `tailscale_api_state`. Не удаляйте этот том при обновлении. Секрет VK ID не публикуется в Git.
 
 ### Desktop-клиент
 
-Для production-сборки скопируйте `desktop/.env.production.example` в локальный `desktop/.env.production`. `VITE_API_URL` указывает на приватный API, а `VITE_PUBLIC_AUTH_URL` — на Funnel-порт 8443. На компьютере и телефоне должен быть включён Tailscale для работы с поисками и пользовательскими данными; вход через VK ID открывается во внешнем браузере. Файл `.env.production` не коммитьте.
+Для production-сборки скопируйте `desktop/.env.production.example` в локальный `desktop/.env.production`. `VITE_API_URL` указывает на приватный API на порту 8443, а `VITE_PUBLIC_AUTH_URL` — на публичный корень домена. На компьютере и телефоне должен быть включён Tailscale для работы с поисками и пользовательскими данными; вход через VK ID открывается во внешнем браузере. Файл `.env.production` не коммитьте.
