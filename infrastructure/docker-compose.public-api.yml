@@ -11,7 +11,6 @@ services:
 
   tailscale-api:
     image: tailscale/tailscale:v1.104.2
-    hostname: kukla-api
     restart: unless-stopped
     profiles: [public-api]
     network_mode: "service:public-api-proxy"
