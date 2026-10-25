@@ -6,6 +6,8 @@ import sensible from '@fastify/sensible';
 import websocket from '@fastify/websocket';
 import { CORS_ORIGIN, JWT_SECRET, pool } from './config.js';
 import authRoutes from './routes/auth.js';
+import profileRoutes from './routes/profiles.js';
+import vkIdRoutes from './routes/vkid.js';
 import userRoutes from './routes/users.js';
 import searchRoutes from './routes/searches.js';
 import taskRoutes from './routes/tasks.js';
@@ -17,7 +19,7 @@ import wsRoutes from './routes/ws.js';
 // тесты и инструменты могли импортировать его и поднять на своём listener.
 export async function buildApp() {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: CORS_ORIGIN });
+  await app.register(cors, { origin: CORS_ORIGIN === '*' ? true : (CORS_ORIGIN ?? '').split(',').map((origin) => origin.trim()) });
   await app.register(sensible);
   await app.register(jwt, { secret: JWT_SECRET });
   await app.register(websocket);
@@ -37,6 +39,8 @@ export async function buildApp() {
   app.setErrorHandler((err,_req,reply)=>{const error=err as {validation?:unknown;statusCode?:number;message?:string};app.log.error(err);if(error.validation)return reply.code(400).send({error:'VALIDATION_ERROR',message:error.message??'Validation error'});const status=error.statusCode??500;return reply.code(status).send({error:status===401?'UNAUTHORIZED':status===403?'FORBIDDEN':status===404?'NOT_FOUND':'ERROR',message:status<500?(error.message??'Request failed'):'Internal server error'});});
 
   await app.register(authRoutes);
+  await app.register(vkIdRoutes);
+  await app.register(profileRoutes);
   await app.register(userRoutes);
   await app.register(searchRoutes);
   await app.register(taskRoutes);

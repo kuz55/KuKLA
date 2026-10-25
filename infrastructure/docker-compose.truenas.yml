@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kukla}
+      POSTGRES_USER: ${POSTGRES_USER:-kukla}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - /mnt/elverato/kukla/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kukla} -d ${POSTGRES_DB:-kukla}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /mnt/elverato/kukla/redis:/data
+
+  server:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-kukla}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kukla}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set}
+      ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-false}
+      VK_ID_CLIENT_ID: ${VK_ID_CLIENT_ID:-}
+      VK_ID_REDIRECT_URI: ${VK_ID_REDIRECT_URI:-}
+      VK_ID_ALLOW_REGISTRATION: ${VK_ID_ALLOW_REGISTRATION:-false}
+      SUPERUSER_PHONE: ${SUPERUSER_PHONE:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      SMS_RU_API_ID: ${SMS_RU_API_ID:-}
+      SMS_AERO_LOGIN: ${SMS_AERO_LOGIN:-}
+      SMS_AERO_API_KEY: ${SMS_AERO_API_KEY:-}
+      SMS_AERO_SIGN: ${SMS_AERO_SIGN:-SMS Aero}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "192.168.0.84:${SERVER_PORT:-18080}:8080"
