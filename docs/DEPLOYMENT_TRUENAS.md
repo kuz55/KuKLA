@@ -52,19 +52,22 @@ https://kukla-api.tail0c73da.ts.net:8443/api/v1/auth/vk/callback
 
 1. Убедитесь, что снимок базы сохранён, и сделайте копию локального `infrastructure/.env`. Не заменяйте существующий `.env` шаблоном.
 2. Добавьте в `.env` переменные VK ID и `TS_API_AUTHKEY`. Ключ Tailscale создайте как одноразовый для нового устройства `kukla-api`, введите непосредственно в `.env` на NAS и не отправляйте в чат.
-3. Из каталога `infrastructure` запустите сервисы с двумя Compose-файлами, сохранив текущий NAS-файл и существующие тома:
+3. Соберите новый образ сервера и проверьте миграции без применения:
 
 ```sh
-sudo docker compose --env-file .env -f docker-compose.truenas.yml -f docker-compose.public-api.yml --profile public-api up -d --build
+sudo docker compose --env-file .env -f docker-compose.truenas.yml build server
+sudo docker compose --env-file .env -f docker-compose.truenas.yml run --rm --no-deps server node dist/migrate.js --dry-run
 ```
 
-4. Перед первым запуском новой версии примените миграции базы из каталога проекта. После обновления файлов на NAS выполните из `infrastructure`:
+Команда `--dry-run` должна показать ожидающие миграции `009`–`011` либо сообщить, что схема уже актуальна. Если обнаружен разрыв нумерации или несовпадение checksum, остановитесь и сохраните вывод ошибки.
+
+4. Запустите сервер с прежним Compose project name. Его Dockerfile применит миграции при старте. Не запускайте старую и новую версии сервера одновременно против одной базы:
 
 ```sh
-sudo docker compose --env-file .env -f docker-compose.truenas.yml run --rm server npm run migrate
+sudo docker compose --env-file .env -f docker-compose.truenas.yml up -d --build server
 ```
 
-Сначала проверьте успешное завершение миграций и наличие резервной копии базы. Затем пересоздайте сервер:
+Проверьте `/health`, `/ready` и логи миграции. После этого подключите шлюз и Tailscale sidecar:
 
 ```sh
 sudo docker compose --env-file .env -f docker-compose.truenas.yml -f docker-compose.public-api.yml --profile public-api up -d --build server public-api-proxy tailscale-api
