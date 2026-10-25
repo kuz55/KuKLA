@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Main KuKLA window",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:allow-default-urls"]
+}

@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { Role, adminRoles, managementRoles, privilegedRoles, canManageUser, canAssignRole } from './rbac.js';
+import { registerVkIdAuth } from './vkid.js';
 
 const { Pool } = pg;
 const isProduction = process.env.NODE_ENV === 'production';
@@ -28,6 +29,7 @@ await app.register(cors, { origin: CORS_ORIGIN });
 await app.register(sensible);
 await app.register(jwt, { secret: JWT_SECRET });
 await app.register(websocket);
+registerVkIdAuth(app, pool);
 
 type User = { id:string; name:string; email?:string; phone?:string; role:Role };
 declare module '@fastify/jwt' { interface FastifyJWT { user: User } }
@@ -156,7 +158,7 @@ app.post('/api/v1/searches/:id/tasks',{preHandler:roles(...managementRoles)},asy
 app.patch('/api/v1/tasks/:id',{preHandler:auth},async(req)=>{const id=parseId(req);const b=z.object({status:z.enum(['OPEN','IN_PROGRESS','DONE','CANCELLED']).optional(),assigneeId:z.string().uuid().nullable().optional(),description:z.string().optional(),priority:z.number().int().min(1).max(3).optional()}).parse(req.body);const current=await pool.query('SELECT * FROM tasks WHERE id=$1',[id]);if(!current.rowCount)throw app.httpErrors.notFound('Task not found');const task=current.rows[0];await requireSearchAccess(req,task.search_id);const privileged=privilegedRoles.includes(req.user.role);const manager=managementRoles.includes(req.user.role);if(!privileged&&!manager){if(req.user.role!=='SEARCHER'||task.assignee_id!==req.user.id)throw app.httpErrors.forbidden('You may only update tasks assigned to you');if(b.assigneeId!==undefined||b.priority!==undefined)throw app.httpErrors.forbidden('Searchers cannot reassign or reprioritize tasks');}if(b.assigneeId){const member=await pool.query('SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2',[task.search_id,b.assigneeId]);if(!member.rowCount)throw app.httpErrors.badRequest('Assignee must be a member of the search');}const r=await pool.query(`UPDATE tasks SET status=COALESCE($1,status),assignee_id=CASE WHEN $6=true THEN NULL WHEN $2::uuid IS NOT NULL THEN $2::uuid ELSE assignee_id END,description=COALESCE($3,description),priority=COALESCE($4,priority),completed_at=CASE WHEN $1='DONE' THEN now() WHEN $1 IS NOT NULL THEN NULL ELSE completed_at END WHERE id=$5 RETURNING *`,[b.status??null,b.assigneeId??null,b.description??null,b.priority??null,id,b.assigneeId===null]);await audit(task.search_id,req.user.id,'TASK_UPDATED',{taskId:id,changes:b});return r.rows[0];});
 
 app.get('/api/v1/searches/:id/events',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);return (await pool.query('SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 ORDER BY e.created_at DESC LIMIT 500',[id])).rows;});
-app.post('/api/v1/searches/:id/events',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);const b=z.object({type:z.string().min(1).max(100),payload:z.record(z.any()).default({})}).parse(req.body);await audit(id,req.user.id,b.type,b.payload);return {ok:true};});
+app.post('/api/v1/searches/:id/events',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);const b=z.object({type:z.string().min(1).max(100),payload:z.record(z.string(),z.any()).default({})}).parse(req.body);await audit(id,req.user.id,b.type,b.payload);return {ok:true};});
 
 app.post('/api/v1/searches/:id/gps',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);const b=z.object({points:z.array(z.object({lat:z.number().min(-90).max(90),lng:z.number().min(-180).max(180),accuracy:z.number().nonnegative().optional(),altitude:z.number().optional(),speed:z.number().nonnegative().optional(),recorded_at:z.string().datetime().optional()})).min(1).max(1000)}).parse(req.body);const client=await pool.connect();try{await client.query('BEGIN');for(const p of b.points)await client.query('INSERT INTO gps_points(search_id,user_id,lat,lng,accuracy,altitude,speed,recorded_at) VALUES($1,$2,$3,$4,$5,$6,$7,COALESCE($8,now()))',[id,req.user.id,p.lat,p.lng,p.accuracy??null,p.altitude??null,p.speed??null,p.recorded_at??null]);await client.query('COMMIT');}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}return {ok:true,count:b.points.length};});
 app.get('/api/v1/searches/:id/gps',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);const q=z.object({since:z.string().datetime().optional(),userId:z.string().uuid().optional(),limit:z.coerce.number().int().min(1).max(10000).default(5000)}).parse(req.query);return (await pool.query(`SELECT g.*,u.name user_name FROM gps_points g JOIN users u ON u.id=g.user_id WHERE g.search_id=$1 AND ($2::timestamptz IS NULL OR g.recorded_at>=$2) AND ($3::uuid IS NULL OR g.user_id=$3) ORDER BY g.recorded_at LIMIT $4`,[id,q.since??null,q.userId??null,q.limit])).rows;});

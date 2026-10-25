@@ -28,6 +28,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set in .env}
       ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-false}
+      VK_ID_CLIENT_ID: ${VK_ID_CLIENT_ID:-}
+      VK_ID_REDIRECT_URI: ${VK_ID_REDIRECT_URI:-}
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_started}

@@ -3,6 +3,7 @@ import React,{useEffect,useMemo,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MapContainer,TileLayer,Marker,Popup,Polyline,useMap} from 'react-leaflet';
 import L from 'leaflet';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import 'leaflet/dist/leaflet.css';
 import './style.css';
 
@@ -11,6 +12,8 @@ type Search={id:string;title:string;status:string;area?:string;description?:stri
 type Task={id:string;title:string;description?:string;status:string;priority:number;assignee?:string;lat?:number;lng?:number};
 const API=import.meta.env.VITE_API_URL??'http://localhost:8080/api/v1';
 async function api<T>(path:string,opts:RequestInit={}){const token=localStorage.getItem('kukla_token');const r=await fetch(API+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})}});if(!r.ok)throw new Error((await r.json().catch(()=>({message:r.statusText}))).message);return r.json() as Promise<T>}
+const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+async function openExternalUrl(url:string){const parsed=new URL(url);if(parsed.protocol!=='https:'||parsed.hostname!=='id.vk.ru')throw new Error('Сервер вернул недоверенную ссылку авторизации');if('__TAURI_INTERNALS__' in window)await openUrl(parsed.toString());else{const popup=window.open(parsed.toString(),'_blank');if(!popup)throw new Error('Разрешите открытие окна авторизации VK ID');}}
 function FixLeaflet(){useEffect(()=>{const icon=L.icon({iconUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',iconRetinaUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41]});(L.Marker.prototype.options as any).icon=icon},[]);return null}
 function Login({onLogin}:{onLogin:(u:User)=>void}){
   const [mode,setMode]=useState<'login'|'register'>('login');
@@ -20,6 +23,23 @@ function Login({onLogin}:{onLogin:(u:User)=>void}){
   const [email,setEmail]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
+  const [vkBusy,setVkBusy]=useState(false);
+
+  const loginWithVk=async()=>{
+    setError('');setVkBusy(true);
+    try{
+      const flow=await api<{requestId:string;pollSecret:string;authorizationUrl:string}>('/auth/vk/start',{method:'POST'});
+      await openExternalUrl(flow.authorizationUrl);
+      for(let attempt=0;attempt<300;attempt++){
+        await delay(2000);
+        const result=await api<{status:'pending'|'failed'|'complete';token?:string;user?:User}>('/auth/vk/poll',{method:'POST',body:JSON.stringify({requestId:flow.requestId,pollSecret:flow.pollSecret})});
+        if(result.status==='failed')throw new Error('VK ID не завершил вход. Попробуйте ещё раз.');
+        if(result.status==='complete'&&result.token&&result.user){localStorage.setItem('kukla_token',result.token);onLogin(result.user);return;}
+      }
+      throw new Error('Время ожидания входа истекло. Запустите вход заново.');
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось войти через VK ID');}
+    finally{setVkBusy(false);}
+  };
 
   const submit=async()=>{
     setError('');
@@ -82,6 +102,10 @@ function Login({onLogin}:{onLogin:(u:User)=>void}){
 
       <button className="primary" onClick={submit} disabled={busy}>
         {busy?'Подождите…':mode==='login'?'Войти':'Зарегистрироваться'}
+      </button>
+
+      <button className="primary" onClick={loginWithVk} disabled={vkBusy||busy}>
+        {vkBusy?'Ожидаем подтверждение VK ID…':'Войти через VK ID'}
       </button>
 
       {error&&<div className="error">{error}</div>}
