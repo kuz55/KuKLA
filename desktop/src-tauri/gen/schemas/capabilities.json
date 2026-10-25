@@ -1,1 +1,1 @@
-{}
+{"main-capability":{"identifier":"main-capability","description":"KuKLA desktop window permissions","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"opener:allow-open-url","allow":[{"url":"https://id.vk.ru/**"}]}]}}

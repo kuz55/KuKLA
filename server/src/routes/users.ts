@@ -3,13 +3,14 @@ import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { adminRoles, managementRoles, privilegedRoles, Role, canManageUser, canAssignRole } from '../rbac.js';
 import { pool } from '../config.js';
-import { audit, parseId, roles } from '../http.js';
+import { audit, auth, parseId, roles } from '../http.js';
 
 const userRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/api/v1/users',{preHandler:roles(...managementRoles)},async(req)=>{
-    if (privilegedRoles.includes(req.user.role) || adminRoles.includes(req.user.role)) return (await pool.query('SELECT id,name,email,phone,role,active,created_at FROM users ORDER BY name')).rows;
-    return (await pool.query(`SELECT DISTINCT u.id,u.name,u.email,u.phone,u.role,u.active,u.created_at
+  app.get('/api/v1/users',{preHandler:auth},async(req)=>{
+    if (privilegedRoles.includes(req.user.role) || adminRoles.includes(req.user.role)) return (await pool.query(`SELECT u.id,u.name,u.email,u.phone,u.role,u.active,u.created_at,(p.user_id IS NOT NULL) AS has_profile,COALESCE(p.verified,false) AS profile_verified,p.updated_at AS profile_updated_at FROM users u LEFT JOIN user_profiles p ON p.user_id=u.id ORDER BY u.name`)).rows;
+    return (await pool.query(`SELECT DISTINCT u.id,u.name,u.email,u.phone,u.role,u.active,u.created_at,(p.user_id IS NOT NULL) AS has_profile,COALESCE(p.verified,false) AS profile_verified,p.updated_at AS profile_updated_at
       FROM users u JOIN search_members sm ON sm.user_id=u.id
+      LEFT JOIN user_profiles p ON p.user_id=u.id
       JOIN search_members mine ON mine.search_id=sm.search_id
       WHERE mine.user_id=$1 ORDER BY u.name`,[req.user.id])).rows;
   });

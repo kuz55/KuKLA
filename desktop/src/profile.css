@@ -1,0 +1,14 @@
+.profileForm label{display:flex;flex-direction:column;gap:7px;color:#cbd2dc;font-size:13px}
+.profileForm input:not([type=checkbox]),.profileForm textarea{width:100%;padding:11px 12px;color:#edf1f7;background:#0d1117;border:1px solid #303b49;border-radius:9px;font:inherit}
+.profileForm textarea{resize:vertical}
+.formGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:18px 0}
+.formGrid .wide{grid-column:1/-1}
+.profileForm .checkField{flex-direction:row;align-items:center}
+.profileForm .checkField input{accent-color:#ff5b5b;width:17px;height:17px}
+.profileForm>button{padding:11px 16px;border:0;border-radius:9px;cursor:pointer}
+.profileForm .success{margin:12px 0;color:#91e0a8}
+.profileReview{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.profileReview button{padding:6px 9px;border:1px solid #303b49;border-radius:7px;background:#171f29;color:#edf1f7;cursor:pointer}
+.profileDetails{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;background:#0d1117;border-radius:9px;color:#cbd2dc;font-size:13px}
+@media(max-width:720px){.formGrid,.profileDetails{grid-template-columns:1fr}.formGrid .wide{grid-column:auto}}
+.profileForm .secondary{padding:10px 14px;border:1px solid #344254;border-radius:9px;background:#182331;color:#edf1f7;cursor:pointer;font-weight:700}.profileForm .secondary:disabled{opacity:.65;cursor:wait}

@@ -1,0 +1,28 @@
+services:
+  # A narrow public gateway for VK ID only. The Tailscale sidecar shares this
+  # network namespace, so Funnel can proxy to 127.0.0.1:8080 without host mode.
+  public-api-proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: [public-api]
+    volumes:
+      - ./nginx/public-api.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [server]
+
+  tailscale-api:
+    image: tailscale/tailscale:v1.104.2
+    restart: unless-stopped
+    profiles: [public-api]
+    network_mode: "service:public-api-proxy"
+    environment:
+      TS_AUTHKEY: ${TS_API_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: kukla-api
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale_api_state:/var/lib/tailscale
+    depends_on: [public-api-proxy]
+
+volumes:
+  tailscale_api_state:
