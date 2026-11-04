@@ -28,6 +28,7 @@ node --test test/config.test.mjs test/validation.test.mjs test/rbac.test.mjs
 cd desktop
 npm ci
 npm run check
+npm run test
 npm run build
 npm run tauri -- build
 ```

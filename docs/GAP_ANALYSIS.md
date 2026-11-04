@@ -13,7 +13,7 @@ Legend:
 | Authentication | PARTIAL | harden secrets, sessions, rate limits, lifecycle |
 | RBAC | PARTIAL | resource-level authorization and organization scope |
 | Search lifecycle | DONE | formal incident model and transitions |
-| Subject profile | PARTIAL | management-only API/desktop slice exists; finish the workflow, privacy and retention decisions, broader test/production audit verification, and degraded-network behavior before marking complete |
+| Subject profile | PARTIAL | management-only API/desktop slice exists with component tests for list/create/update and online-only failure states; finish workflow acceptance, privacy/retention decisions, production audit verification and the degraded-network contract before marking complete |
 | Organizations | MISSING | organization and membership model |
 | Operational periods | FOUNDATION | API, briefing/debriefing UI |
 | Teams | FOUNDATION | team API, membership and status workflows |

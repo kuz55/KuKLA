@@ -6,11 +6,12 @@ This roadmap converts the product requirements and gap analysis into executable 
 
 - [x] Database foundation: subjects, operational periods, sectors, teams, assignments, clues, witnesses, resources, check-ins, notifications, sync operations.
 - [x] Organization/device/hazard/evidence/emergency/AI job schema foundation.
-- [ ] Subject API and command-center UI — **PARTIAL; do not mark complete yet.** The current scope is manager-only, search-scoped profile list/create/update in the desktop search view; API authorization and audit rollback have local PGlite integration coverage. Remaining gates:
+- [ ] Subject API and command-center UI — **PARTIAL; do not mark complete yet.** The current scope is manager-only, search-scoped profile list/create/update in the desktop search view. PostgreSQL API tests cover authorization, audit privacy/rollback, and the desktop component tests cover search scoping, list/create/update, validation, and online-only failure states. Remaining gates:
   - [ ] Review the complete manager workflow and field acceptance scenario.
   - [ ] Approve privacy, retention, and deletion rules for identifying and medical information.
-  - [ ] Verify audit and retention behavior against PostgreSQL/production configuration; expand desktop and authorization tests.
-  - [ ] Define and test offline/degraded-network behavior before field use.
+  - [x] Add desktop component tests for search-scoped list/create/update, validation, and online-only failure states.
+  - [ ] Verify audit and retention behavior against PostgreSQL/production configuration; expand authorization and end-to-end tests.
+  - [ ] Define the online-only degraded-network contract and test it before field use; no offline cache or command queue is in scope.
   - [ ] Only then revisit field/mobile access, photo handling, deletion, and operational readiness.
 - [ ] Team API, membership and status lifecycle.
 - [ ] Sector geometry API and editor.
