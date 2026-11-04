@@ -109,6 +109,42 @@ jobs:
       - run: npm run check
       - run: npm run build
 
+  tauri-native:
+    name: Tauri native bundle (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+            bundle: deb
+          - platform: Windows
+            os: windows-latest
+            bundle: msi
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> desktop/src-tauri/target
+      - run: npm ci
+      - name: Build native Tauri bundle
+        run: npm run tauri -- build --ci --bundles ${{ matrix.bundle }}
+
   rebuild-go:
     name: Go engine (${{ matrix.os }})
     strategy:

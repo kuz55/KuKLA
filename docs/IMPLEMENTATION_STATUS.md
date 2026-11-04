@@ -16,7 +16,7 @@ This document records what is implemented in the current stabilization branch. I
 - WebSocket handshake requires an authenticated session.
 - JWT authentication is backed by the `sessions` table, so logout/deactivation/revocation takes effect immediately instead of waiting for JWT expiry.
 - Production startup fails when required secrets are left at development defaults.
-- Public registration is disabled by default in production. The server requires `ALLOW_PUBLIC_REGISTRATION=true`; the legacy desktop UI additionally requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` at build time.
+- Public registration is disabled by default in production. The server requires `ALLOW_PUBLIC_REGISTRATION=true`; the Tauri desktop UI additionally requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` at build time.
 - Legacy development seed accounts are disabled during upgrade.
 - Database migrations are executed by a transactional migration runner with an advisory lock and SHA-256 checksums.
 - A second migration run is expected to be a no-op.
@@ -26,12 +26,12 @@ This document records what is implemented in the current stabilization branch. I
 - Desktop defaults to the normal Compose API port `18080`.
 - Desktop Tauri CSP is no longer disabled globally.
 - RBAC policy has dedicated unit-test coverage. Administrative user changes re-check and lock the actor and target in a transaction; the change and its audit event commit atomically.
-- GitHub Actions validates server build, migrations, tests, and desktop build/check.
+- GitHub Actions validates server build, migrations, tests, desktop build/check, and native Tauri Linux DEB and Windows MSI bundles. macOS native builds are not configured yet.
 
 ## Known limitations
 
 - Organization roles are a foundation; full permission objects and resource-level policy tables are not yet implemented.
-- Admin-created, one-time invitation tokens and manager-only membership grants are implemented. The deprecated Tauri/React desktop client has temporary create/revoke and acceptance screens; email/SMS delivery, target Go/C and mobile screens, and request/approval workflow remain pending. Self-join is blocked.
+- Admin-created, one-time invitation tokens and manager-only membership grants are implemented. The Tauri/React desktop client has temporary create/revoke and acceptance screens; email/SMS delivery, mobile onboarding screens, and request/approval workflow remain pending. The Go/C prototype is not connected to the server. Self-join is blocked.
 - WebSocket currently authenticates and supports ping/pong, but the realtime event fan-out layer is not implemented.
 - Offline sync conflict resolution is represented in the schema but not yet implemented end-to-end.
 - Field GPS and mobile functionality require the future Flutter client.

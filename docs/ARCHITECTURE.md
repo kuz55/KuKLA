@@ -1,16 +1,16 @@
 # KuKLA Target Architecture
 
-> Data ownership and the server/local boundary are fixed by [ADR-0001](adr/0001-data-ownership-server-vs-local.md).
+> Server data ownership is fixed by [ADR-0001](adr/0001-data-ownership-server-vs-local.md); the Tauri desktop-client choice is recorded in [ADR-0002](adr/0002-tauri-cross-platform-desktop.md).
 > The per-entity breakdown lives in [`DATA_OWNERSHIP.md`](DATA_OWNERSHIP.md).
 
 ## Goal
 
 Server-first search coordination system with desktop and field clients.
 
-- Command staff (leaders, coordinators) work in a cross-platform desktop client for **Windows and Linux**.
-- Field members work in a mobile client.
-- There is no mandatory browser UI.
-- **PostgreSQL remains the authoritative state.** The Go/C desktop client extends the platform; it does not replace the server.
+- Command staff (leaders, coordinators) use the native Tauri desktop client on **Windows and Linux**; macOS packaging is planned for a later increment.
+- Field members work in a separate mobile client.
+- There is no mandatory browser UI; Vite's browser server is used for development only.
+- **PostgreSQL remains the authoritative state.** The Tauri client uses the server API and does not replace the backend.
 
 ## Components
 
@@ -18,44 +18,32 @@ Server-first search coordination system with desktop and field clients.
 |---|---|---|
 | Fastify API (`server/`) | Authentication, RBAC, searches, members, tasks, events, GPS | **Authoritative contract**; extended, not replaced |
 | PostgreSQL | Authoritative state | Active |
-| Go engine (`rebuild/`) | Local desktop application logic, SQLite cache and outbound command queue | Target desktop client |
-| C/GTK 4 (`rebuild/ui/gtk`) | Native desktop interface on Linux and Windows | Target desktop client |
-| Flutter (`mobile/`) | Field client with local cache and offline command queue | Retained in the target architecture |
-| Tauri + React (`desktop/`) | Previous desktop client | **Deprecated**; behavior reference until Go/C reaches parity |
+| Tauri + React (`desktop/`) | Cross-platform native desktop client | Target for Windows/Linux; macOS planned |
+| Go/C + GTK4 (`rebuild/`) | Local-only desktop prototype with SQLite | Experimental; not connected to the server and not the product target |
+| Flutter (`mobile/`) | Field client | Retained in the target architecture; offline workflow is incomplete |
 | Redis | Reserved for queues/cache/realtime expansion | Present but unused by server code |
 | Nginx | Optional production reverse proxy / TLS termination | Active |
 
 ### Desktop transport
 
-The desktop application does not open TCP ports by default. The GTK interface talks to the local Go engine over a private Unix-domain socket on Linux or an ACL-restricted named pipe on Windows. The engine talks to the server over HTTPS.
+The Tauri client calls the server API over HTTP(S); the packaged default is the local Compose API, while production deployments use HTTPS. During web development, the Vite proxy keeps API calls same-origin. The client does not host a local API. Durable offline caching and command queuing are not implemented in Tauri yet; the separate Go/C prototype's private IPC is not the transport for the target client.
 
 ## Data flow
 
-- The **server is authoritative**. Clients read operational state and submit changes.
-- The **local database is derived**: a read cache for server data plus an outbound queue for commands issued without connectivity.
-- Field commands (GPS points, task status) are written locally when the network is unavailable and flushed afterwards with retry and idempotency keys.
-- The local database **does not store authorizing roles**. A role is only meaningful as returned by the server. Hiding interface elements is never treated as authorization.
-- Conflicts keep both versions and are resolved by an authorized user, not silently overwritten.
+- The **server is authoritative**. The Tauri desktop client reads and changes shared state only through the server API.
+- Tauri currently has no local operational database or durable offline command queue. Its subject-profile screen makes online API calls; degraded-network behavior remains a roadmap item.
+- Server-side role and search-access checks are authoritative. Hiding interface elements is never treated as authorization.
+- Any future offline cache/queue must preserve server authority and define conflict resolution before field use.
 
 ## Authentication
 
-- Phone number with a one-time code (OTP) is the primary field credential.
-- Email and password sign-in remains available for organizations without SMS.
+- The current desktop sign-in is email/phone plus password; phone OTP is not implemented.
 - Public self-registration is disabled; accounts are created by invitation or by an administrator.
-- The session token is stored in the operating system credential store, not in a plain configuration file.
+- The Tauri UI currently persists its session token in WebView `localStorage`. Moving it to the operating system credential store is a security requirement still to implement before production use.
 - Production requires TLS, strong secrets, restricted network exposure and no default accounts.
 
 ## Security
 
 JWT is required for protected API calls. Role checks are performed on the server. The first system owner is created by the one-time `kukla_bootstrap_system_owner` procedure, never by a shipped default password (see [`SECURITY_BOOTSTRAP.md`](SECURITY_BOOTSTRAP.md)).
 
-Client data at rest is **planned** to be encrypted with SQLCipher using a key held by the operating system credential store. This is not implemented yet: the local database is currently unencrypted. Medical notes on a search subject must not be collected or displayed until that encryption is in place (see [`OPERATIONS.md`](OPERATIONS.md)).
-
-## Not applicable to the local client
-
-These mechanisms protect the server perimeter and have no meaning in local mode:
-
-- cross-user authorization and organization isolation (a local install has one OS user);
-- request rate limiting;
-- CORS and port exposure;
-- WebSocket broadcast (realtime requires a second participant, i.e. the server).
+The subject-profile slice permits only management roles with access to the relevant search to read or edit medical notes. It does not cache those records for offline use. This implementation is not a completed privacy approval: retention/deletion, production storage and backup protections, and operational audit review remain open. Do not treat the feature as ready for field or rescue-coordination use. The unencrypted SQLite database in `rebuild/` belongs to an experimental local prototype and is not used by the Tauri client.

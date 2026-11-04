@@ -31,7 +31,7 @@ The system must provide a shared operational picture for command staff and field
 - Public self-registration is disabled. Accounts are created by invitation or by an administrator.
 - Phone numbers are normalized and stored in E.164 format.
 - One-time codes are single-use, time-limited, rate-limited and audited. Provider secrets are supplied through environment variables and are never committed to the repository, written to logs, or embedded in the client.
-- The session token is stored in the operating system credential store on desktop clients.
+- Desktop session tokens should be stored in the operating system credential store. The current Tauri client still uses WebView `localStorage`; migrating it is a security requirement before production use.
 - Server-side RBAC.
 - Least-privilege access to operational and personal data.
 - Audit trail for security-sensitive actions.
@@ -85,7 +85,7 @@ The system must provide a shared operational picture for command staff and field
 - Photos and attachments.
 - Hypotheses and decision support as a future module.
 
-Medical notes on a search subject are not collected or displayed until data-at-rest encryption is in place.
+The current manager-only subject-profile API/UI can accept and display medical notes through online server requests. This implementation is not approval to collect real subject data: do not use real medical notes until privacy/retention rules and production storage/backup protections are approved and verified, and workflow, tests and audit behavior have been reviewed. Field/mobile, photo-upload, hard-delete and offline/degraded-network behavior remain out of scope; see the [Subject-profile completion gate](IMPLEMENTATION_ROADMAP.md).
 
 ### Communications
 - Operational notifications.
@@ -134,6 +134,6 @@ The repository already implements the MVP foundation: authentication/RBAC, searc
 Two client implementations exist in parallel:
 
 - `server/` (Fastify/TypeScript, PostgreSQL) is the authoritative contract and is extended, not replaced.
-- `rebuild/` (Go/C, GTK4, SQLite) is the target desktop client. It implements a local workflow but is not yet connected to the server, and phone sign-in, role assignment, tasks, groups, intake, maps, media, notifications and synchronization are not implemented there yet.
+- `desktop/` (Tauri/React) is the target cross-platform native desktop client for Windows and Linux; macOS support is planned for a later increment. Native Windows/Linux build checks are in CI. The current Tauri app uses server API authentication and workflows; secure OS credential storage for its session token, full offline sync, and macOS packaging remain outstanding.
 
-`desktop/` (Tauri/React) is deprecated and is retained as a behavior reference until the Go/C client reaches feature parity.
+`rebuild/` (Go/C, GTK4, SQLite) is an experimental local prototype. It is not connected to the server and is not the target product client.

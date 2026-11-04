@@ -30,9 +30,9 @@ A track is operational data inside a search operation. **Any user with access to
 
 ### Medical notes
 
-Medical notes on a search subject (`subjects.medical_notes`) must **not** be collected, stored or displayed until data-at-rest encryption is in place on the client (SQLCipher with an OS key store). The column exists in the schema but remains unused until this condition is met. See [ADR-0001](adr/0001-data-ownership-server-vs-local.md).
+The current manager-only subject-profile API/UI accepts and displays `subjects.medical_notes` through online server requests, but this is an incomplete implementation—not approval to collect real subject data. **Do not enter real subject or medical data** until privacy/retention rules, production PostgreSQL/storage and backup protections, audit verification, tests and the end-to-end workflow are reviewed and approved. The client has no offline/degraded-network support for this feature. Keep the roadmap item PARTIAL; see [ADR-0001](adr/0001-data-ownership-server-vs-local.md) for the server/local boundary and [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for completion gates.
 
-Once encryption is in place, access to medical data is limited to the roles that manage the search lifecycle. The concrete list is `SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR` — that is, the server's existing `managementRoles` (`server/src/rbac.ts`). `SEARCHER` and `VIEWER` never receive medical data. This list must be reconfirmed before the medical feature ships.
+The current API restricts access to search-management roles with access to the relevant search. The concrete roles are `SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR` — the server's `managementRoles` (`server/src/rbac.ts`); `SEARCHER` and `VIEWER` do not receive subject data. Server authorization does not settle the open privacy, retention, encryption, backup or operational-review requirements.
 
 ### Secrets
 

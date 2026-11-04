@@ -2,7 +2,7 @@
 
 Base URL: `/api/v1`.
 
-- **Auth:** `POST /auth/login`, `POST /auth/register` (development/explicit opt-in only), `POST /auth/accept-invitation`, `POST /auth/logout`, `GET /me`. Open registration stays disabled by default; the server must explicitly enable it, and the legacy desktop UI also requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` when built.
+- **Auth:** `POST /auth/login`, `POST /auth/register` (development/explicit opt-in only), `POST /auth/accept-invitation`, `POST /auth/logout`, `GET /me`. Open registration stays disabled by default; the server must explicitly enable it, and the Tauri desktop UI also requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` when built.
 - **Users:** `GET /users`, `PATCH /users/:id`.
 - **Invitations:** admin-only `POST /users/invitations` creates an invitation and returns a one-time token; `GET /users/invitations` lists metadata only; `DELETE /users/invitations/:id` revokes a pending invitation. Deliver the returned token to the invitee through a trusted channel. Tokens expire after 24 hours.
 - **Searches:** `GET/POST /searches`, `GET/PATCH /searches/:id`.
@@ -46,7 +46,7 @@ The invitee accepts with:
 
 `POST /auth/accept-invitation` creates the account and a 12-hour session atomically. A token cannot be replayed, and an invite is rejected if its inviter is no longer active or authorized for the invited role.
 
-Direct self-join at `POST /searches/:id/join` is disabled. It returns `403`; an authorized manager must add an active user. A temporary invitation flow exists in the deprecated Tauri/React client; the target Go/C and mobile clients, plus email/SMS delivery, still need onboarding screens and delivery support.
+Direct self-join at `POST /searches/:id/join` is disabled. It returns `403`; an authorized manager must add an active user. A temporary invitation flow exists in the Tauri/React desktop client; mobile onboarding screens and email/SMS delivery are not implemented. The Go/C prototype is not connected to the server.
 
 ## Subject profile scope and limitations
 

@@ -36,7 +36,7 @@ Never commit real values to Git.
 
 After the owner signs in, an authorized administrator can create a one-time invitation through `POST /api/v1/users/invitations`. The API returns a random token once; only its SHA-256 hash is stored. Deliver the token to the invitee through a trusted out-of-band channel. The invitee chooses a password with `POST /api/v1/auth/accept-invitation`. Invitations expire after 24 hours and can be revoked before acceptance.
 
-The API does not send email or SMS. A temporary create/revoke/accept screen exists in the deprecated Tauri/React desktop client; the target Go/C and mobile clients do not yet have onboarding screens. Public self-registration should remain disabled. The inviter's role is checked when the invitation is issued and accepted. `SYSTEM_OWNER` cannot be assigned through an invitation; it is reserved for the one-time bootstrap process.
+The API does not send email or SMS. A temporary create/revoke/accept screen exists in the Tauri/React desktop client; the mobile client does not yet have onboarding screens, and the Go/C prototype is not connected to the server. Public self-registration should remain disabled. The inviter's role is checked when the invitation is issued and accepted. `SYSTEM_OWNER` cannot be assigned through an invitation; it is reserved for the one-time bootstrap process.
 
 ## Existing installations
 
