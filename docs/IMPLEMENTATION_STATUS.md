@@ -22,7 +22,7 @@ This document records what is implemented in the current stabilization branch. I
 - Desktop role controls are aligned with the server role hierarchy.
 - Desktop defaults to the normal Compose API port `18080`.
 - Desktop Tauri CSP is no longer disabled globally.
-- RBAC policy has dedicated unit-test coverage.
+- RBAC policy has dedicated unit-test coverage. Administrative user changes re-check and lock the actor and target in a transaction; the change and its audit event commit atomically.
 - GitHub Actions validates server build, migrations, tests, and desktop build/check.
 
 ## Known limitations

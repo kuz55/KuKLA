@@ -184,6 +184,50 @@ test('PATCH /users: user change rolls back if its audit insert fails', async () 
   }
 });
 
+test('PATCH /users: existing sessions reflect role changes and stop after deactivation', async () => {
+  const email = `live-role-${Date.now()}@test.local`;
+  const userId = await createTestUser('LEADER', email);
+  const token = await login(email, 'test-pass-123456');
+
+  const before = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(before.status, 200);
+  assert.equal((await before.json()).role, 'LEADER');
+
+  const demoted = await fetch(`${base}/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ role: 'SEARCHER' }),
+  });
+  assert.equal(demoted.status, 200);
+
+  const afterDemotion = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(afterDemotion.status, 200);
+  assert.equal((await afterDemotion.json()).role, 'SEARCHER');
+  const forbidden = await fetch(`${base}/api/v1/searches`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ title: 'Old role must not grant access' }),
+  });
+  assert.equal(forbidden.status, 403);
+
+  const deactivated = await fetch(`${base}/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ active: false }),
+  });
+  assert.equal(deactivated.status, 200);
+
+  const afterDeactivation = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(afterDeactivation.status, 401);
+  assert.equal((await afterDeactivation.json()).message, 'Session expired or revoked');
+});
+
 test('PATCH /users: ADMIN cannot change SYSTEM_OWNER role', async () => {
   const r = await fetch(`${base}/api/v1/users/${users.systemOwner.id}`, {
     method: 'PATCH',
