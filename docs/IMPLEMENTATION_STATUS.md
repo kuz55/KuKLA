@@ -10,6 +10,7 @@ This document records what is implemented in the current stabilization branch. I
 - Task updates require search access; searchers may update only tasks assigned to themselves and cannot reassign or reprioritize them.
 - Task assignees must be members of the search.
 - GPS, events, members, snapshots, and search details require search access.
+- Offline snapshots check access and read all sections in one read-only repeatable-read transaction.
 - WebSocket handshake requires an authenticated session.
 - JWT authentication is backed by the `sessions` table, so logout/deactivation/revocation takes effect immediately instead of waiting for JWT expiry.
 - Production startup fails when required secrets are left at development defaults.

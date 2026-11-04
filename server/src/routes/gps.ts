@@ -67,30 +67,40 @@ const gpsRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/api/v1/searches/:id/snapshot', { preHandler: auth }, async (req) => {
     const id = parseId(req);
-    await requireSearchAccess(req, id);
-    const [search, members, tasks, events, gps] = await Promise.all([
-      pool.query('SELECT * FROM searches WHERE id=$1', [id]),
-      pool.query(
+    const client = await pool.connect();
+    try {
+      // Use one read-only MVCC snapshot for both authorization and every section
+      // so an offline client cannot receive a cross-version mixture of data.
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await requireSearchAccess(req, id, client);
+      const search = await client.query('SELECT * FROM searches WHERE id=$1', [id]);
+      const members = await client.query(
         'SELECT u.id,u.name,u.role,m.joined_at FROM search_members m JOIN users u ON u.id=m.user_id WHERE m.search_id=$1',
         [id],
-      ),
-      pool.query('SELECT * FROM tasks WHERE search_id=$1 ORDER BY created_at', [id]),
-      pool.query(
+      );
+      const tasks = await client.query('SELECT * FROM tasks WHERE search_id=$1 ORDER BY created_at', [id]);
+      const events = await client.query(
         'SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 ORDER BY e.created_at DESC LIMIT 200',
         [id],
-      ),
-      pool.query(
+      );
+      const gps = await client.query(
         'SELECT g.*,u.name user_name FROM gps_points g JOIN users u ON u.id=g.user_id WHERE g.search_id=$1 ORDER BY g.recorded_at DESC,g.id DESC LIMIT 5000',
         [id],
-      ),
-    ]);
-    return {
-      search: search.rows[0],
-      members: members.rows,
-      tasks: tasks.rows,
-      events: events.rows,
-      gps: gps.rows,
-    };
+      );
+      await client.query('COMMIT');
+      return {
+        search: search.rows[0],
+        members: members.rows,
+        tasks: tasks.rows,
+        events: events.rows,
+        gps: gps.rows,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 };
 
