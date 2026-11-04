@@ -99,12 +99,14 @@ async function requireCurrentSession(req: FastifyRequest, client: PoolClient) {
   if (!session.rowCount) throw httpErrors.unauthorized('Session expired or revoked');
 }
 
-export async function commitSearchMutation(req: FastifyRequest, client: PoolClient) {
+export async function commitAuthorizedSearchTransaction(req: FastifyRequest, client: PoolClient) {
   // Expiration is time-based (unlike logout, which is blocked by the session
   // row lock), so check once more at the commit boundary.
   await requireCurrentSession(req, client);
   await client.query('COMMIT');
 }
+
+export const commitSearchMutation = commitAuthorizedSearchTransaction;
 
 export async function requireSearchWriteAccess(
   req: FastifyRequest,

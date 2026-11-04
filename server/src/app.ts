@@ -12,6 +12,7 @@ import searchRoutes from './routes/searches.js';
 import taskRoutes from './routes/tasks.js';
 import eventRoutes from './routes/events.js';
 import gpsRoutes from './routes/gps.js';
+import subjectRoutes from './routes/subjects.js';
 import wsRoutes from './routes/ws.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
@@ -81,6 +82,7 @@ export async function buildApp() {
   await app.register(taskRoutes);
   await app.register(eventRoutes);
   await app.register(gpsRoutes);
+  await app.register(subjectRoutes);
   await app.register(wsRoutes);
 
   return app;
