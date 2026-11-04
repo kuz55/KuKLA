@@ -18,7 +18,10 @@ const login = async (email, password) => {
 
 const request = (token, path, method = 'GET', body) => fetch(`${base}/api/v1${path}`, {
   method,
-  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  headers: {
+    Authorization: `Bearer ${token}`,
+    ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+  },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 

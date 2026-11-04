@@ -88,10 +88,16 @@ jobs:
           done
           echo "server did not become ready in 30s" >&2
           exit 1
-      - run: npm test
+      - name: Run server tests
+        run: npm test 2>&1 | tee server-test.log
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
+      - name: Publish server test failure details
+        if: failure()
+        run: |
+          echo '## Server test output' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 250 server-test.log >> "$GITHUB_STEP_SUMMARY"
       - name: Show server log
         if: failure()
         run: cat server.log
@@ -146,8 +152,24 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> desktop/src-tauri/target
       - run: npm ci
+      - name: Resolve native Cargo lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - name: Export lockfile for dependency bootstrap
+        if: runner.os == 'Linux'
+        run: |
+          echo '## Temporary resolved Cargo.lock' >> "$GITHUB_STEP_SUMMARY"
+          echo '```toml' >> "$GITHUB_STEP_SUMMARY"
+          cat src-tauri/Cargo.lock >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
       - name: Build native Tauri bundle
-        run: npm run tauri -- build --ci --bundles ${{ matrix.bundle }}
+        run: |
+          set -o pipefail
+          npm run tauri -- build --ci --bundles ${{ matrix.bundle }} 2>&1 | tee tauri-build.log
+      - name: Publish Tauri build failure details
+        if: failure()
+        run: |
+          echo '## Tauri native build output' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 150 tauri-build.log >> "$GITHUB_STEP_SUMMARY"
 
   rebuild-go:
     name: Go engine (${{ matrix.os }})

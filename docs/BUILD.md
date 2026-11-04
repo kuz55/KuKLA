@@ -35,6 +35,8 @@ npm run tauri -- build
 
 The packaged client defaults to the local Compose API at `http://localhost:18080/api/v1`; override it with `VITE_API_URL` when building against another server. In Vite development mode, the client uses relative `/api/v1` requests and the dev server proxies them to `VITE_DEV_API_TARGET` (default `http://127.0.0.1:18080`), so browser requests stay same-origin.
 
+Native Tauri builds store the session token in the operating system credential store (Windows Credential Manager or Linux Secret Service) and do not fall back to WebView `localStorage`. A legacy token is moved to the native store on first launch and its plaintext WebView copy is removed. If the system store is unavailable, login is not persisted. Browser-only builds continue to use `localStorage` for development.
+
 On Ubuntu, install Tauri's Linux dependencies: `libwebkit2gtk-4.1-dev`, `build-essential`, `curl`, `wget`, `file`, `libxdo-dev`, `libssl-dev` and `librsvg2-dev`. For a specific package, use `npm run tauri -- build --bundles deb` on Linux or `npm run tauri -- build --bundles msi` on Windows.
 
 ## Go/C + GTK prototype
