@@ -25,7 +25,7 @@ This document records what is implemented in the current stabilization branch. I
 - Desktop role controls are aligned with the server role hierarchy.
 - Desktop defaults to the normal Compose API port `18080`.
 - Desktop Tauri CSP is no longer disabled globally.
-- Subject-panel component tests cover search scoping, create/update requests, validation, and fail-closed online-only errors; no offline cache or queue is introduced.
+- Subject-panel component tests cover search scoping, create/update requests, validation, fail-closed online-only errors, and the absence of photo/delete controls; API tests verify photo URLs are not accepted or stored and hard deletion is not exposed. No offline cache or queue is introduced.
 - RBAC policy has dedicated unit-test coverage. Administrative user changes re-check and lock the actor and target in a transaction; the change and its audit event commit atomically.
 - GitHub Actions validates server build, migrations, tests, desktop build/check, and native Tauri Linux DEB and Windows MSI bundles. macOS native builds are not configured yet.
 

@@ -38,6 +38,7 @@ describe('SubjectPanel', () => {
     expect(screen.getByText('Тестовая медицинская заметка')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Изменить' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /удалить/i })).toBeNull();
+    expect(screen.queryByLabelText(/фото|photo/i)).toBeNull();
   });
 
   it('requires at least one detail before creating a profile', async () => {

@@ -7,9 +7,10 @@ This roadmap converts the product requirements and gap analysis into executable 
 - [x] Database foundation: subjects, operational periods, sectors, teams, assignments, clues, witnesses, resources, check-ins, notifications, sync operations.
 - [x] Organization/device/hazard/evidence/emergency/AI job schema foundation.
 - [ ] Subject API and command-center UI — **PARTIAL; do not mark complete yet.** The current scope is manager-only, search-scoped profile list/create/update in the desktop search view. PostgreSQL API tests cover authorization, audit privacy/rollback, and the desktop component tests cover search scoping, list/create/update, validation, and online-only failure states. Remaining gates:
-  - [ ] Review the complete manager workflow and field acceptance scenario.
-  - [ ] Approve privacy, retention, and deletion rules for identifying and medical information.
-  - [x] Add desktop component tests for search-scoped list/create/update, validation, and online-only failure states.
+  - [x] Prepare a synthetic-data manager workflow acceptance script (`docs/acceptance/subject-manager-workflow.md`).
+  - [ ] Review and sign off the complete manager workflow and field acceptance scenario.
+  - [ ] Approve privacy, numeric retention, and deletion rules for identifying and medical information using the [policy proposal](acceptance/subject-data-policy-proposal.md); do not use real data before approval.
+  - [x] Add desktop component tests for search-scoped list/create/update, validation, and online-only failure states; add API regression tests rejecting stored photo URLs and hard deletion.
   - [ ] Verify audit and retention behavior against PostgreSQL/production configuration; expand authorization and end-to-end tests.
   - [ ] Define the online-only degraded-network contract and test it before field use; no offline cache or command queue is in scope.
   - [ ] Only then revisit field/mobile access, photo handling, deletion, and operational readiness.

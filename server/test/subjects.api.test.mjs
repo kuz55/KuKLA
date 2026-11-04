@@ -61,6 +61,8 @@ const subjectPayload = {
   description: 'Краткое описание для теста',
   clothing: 'Синяя куртка',
   medicalNotes: 'Сведения ограниченного доступа',
+  photoUrl: 'https://example.invalid/subject.jpg',
+  photo_url: 'https://example.invalid/subject.jpg',
   lastKnownLat: 58.0105,
   lastKnownLng: 56.2502,
   lastKnownAt: '2026-11-04T03:00:00.000Z',
@@ -105,6 +107,10 @@ test('manager can create a validated subject profile with a non-PII audit record
   assert.equal(subject.searchId, searchId);
   assert.equal(subject.fullName, subjectPayload.fullName);
   assert.equal(subject.medicalNotes, subjectPayload.medicalNotes);
+  assert.equal(Object.hasOwn(subject, 'photoUrl'), false);
+  assert.equal(Object.hasOwn(subject, 'photo_url'), false);
+  const photoColumn = await queryTestDatabase('SELECT photo_url FROM subjects WHERE id=$1', [subjectId]);
+  assert.equal(photoColumn.rows[0].photo_url, null, 'Photo URL is not accepted or stored by this API slice');
   assert.equal(subject.lastKnownLat, subjectPayload.lastKnownLat);
   assert.equal(subject.lastKnownLng, subjectPayload.lastKnownLng);
   assert.ok(subject.createdAt);
@@ -158,6 +164,13 @@ test('manager can update a subject and the change audit contains field names onl
   assert.deepEqual(audit.rows[0].payload, { subjectId, fields: Object.keys(update) });
   const memberEvents = await request(tokens.searcher, `/searches/${searchId}/events`);
   assert.ok(!(await memberEvents.json()).some((event) => event.type === 'SUBJECT_UPDATED'), 'Subject update audit metadata is manager-only too');
+});
+
+test('hard deletion is not exposed by the subject API', async () => {
+  const response = await request(tokens.leader, `/searches/${searchId}/subjects/${subjectId}`, 'DELETE');
+  assert.equal(response.status, 404);
+  const stored = await queryTestDatabase('SELECT id FROM subjects WHERE id=$1', [subjectId]);
+  assert.equal(stored.rowCount, 1, 'The subject remains stored because deletion is out of scope');
 });
 
 test('subject ids are scoped to their search and unknown ids remain indistinguishable', async () => {
