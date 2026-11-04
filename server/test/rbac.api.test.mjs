@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
+import { closeTestDatabase, connectTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
@@ -77,6 +77,37 @@ const addMember = async (searchId, userId, token = tokens.leader) => fetch(`${ba
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   body: JSON.stringify({ userId }),
 });
+
+const waitForDatabaseLockWait = async (queryPattern, timeoutMs = 5000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const waiting = await queryTestDatabase(
+      `SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND state='active'
+         AND wait_event_type='Lock' AND query LIKE $1
+       LIMIT 1`,
+      [queryPattern],
+    );
+    if (waiting.rowCount) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+};
+
+const lockActivityAvailable = async (t) => {
+  try {
+    const version = await queryTestDatabase('SELECT version()');
+    if (/PGlite/i.test(version.rows[0]?.version ?? '')) {
+      t.skip('PGlite serializes socket transactions and cannot exercise concurrent row/advisory lock waits');
+      return false;
+    }
+    await queryTestDatabase('SELECT wait_event_type,wait_event FROM pg_stat_activity LIMIT 0');
+    return true;
+  } catch {
+    t.skip('The test database does not expose PostgreSQL lock-wait activity');
+    return false;
+  }
+};
 
 // ============================================================================
 // GET /api/v1/users — who can list users (managementRoles)
@@ -572,4 +603,140 @@ test('PATCH /tasks: existing and unknown task ids are indistinguishable outside 
   assert.equal(existing.status, 404);
   assert.equal(unknown.status, 404);
   assert.deepEqual(await existing.json(), await unknown.json());
+});
+
+test('Search-scoped PATCH rechecks membership after a concurrent revocation commits', { timeout: 15000 }, async (t) => {
+  const searchId = await createSearch(tokens.leader, `Search Write Race ${Date.now()}`);
+  const before = await queryTestDatabase(
+    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+     FROM searches s WHERE s.id=$1`,
+    [searchId],
+  );
+  assert.equal(before.rowCount, 1);
+
+  if (!(await lockActivityAvailable(t))) return;
+
+  const blocker = await connectTestDatabase();
+  let mutation;
+  let committed = false;
+  try {
+    await blocker.query('BEGIN');
+    await blocker.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`search:${searchId}`]);
+    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+      body: JSON.stringify({ title: 'Must not commit after revocation' }),
+    });
+
+    assert.equal(
+      await waitForDatabaseLockWait('%pg_advisory_xact_lock%'),
+      true,
+      'PATCH did not wait for the search-scoped lock',
+    );
+    await blocker.query('DELETE FROM search_members WHERE search_id=$1 AND user_id=$2', [searchId, users.leader.id]);
+    await blocker.query('COMMIT');
+    committed = true;
+
+    const response = await mutation;
+    assert.equal(response.status, 404, 'The write must be denied after its membership is revoked');
+    const after = await queryTestDatabase(
+      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+       FROM searches s WHERE s.id=$1`,
+      [searchId],
+    );
+    assert.deepEqual(after.rows[0], before.rows[0], 'Denied write must not change search data or append an audit event');
+  } finally {
+    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
+    blocker.release();
+    if (mutation) await mutation.catch(() => {});
+  }
+});
+
+test('Search PATCH re-reads the actor role after a concurrent demotion commits', { timeout: 15000 }, async (t) => {
+  const searchId = await createSearch(tokens.leader, `Search Role Race ${Date.now()}`);
+  const before = await queryTestDatabase(
+    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+     FROM searches s WHERE s.id=$1`,
+    [searchId],
+  );
+  if (!(await lockActivityAvailable(t))) return;
+
+  const blocker = await connectTestDatabase();
+  let mutation;
+  let committed = false;
+  try {
+    await blocker.query('BEGIN');
+    await blocker.query("UPDATE users SET role='SEARCHER' WHERE id=$1", [users.leader.id]);
+    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+      body: JSON.stringify({ title: 'Must not commit after demotion' }),
+    });
+
+    assert.equal(
+      await waitForDatabaseLockWait('%ORDER BY id FOR SHARE%'),
+      true,
+      'PATCH did not wait for the actor role lock',
+    );
+    await blocker.query('COMMIT');
+    committed = true;
+
+    const response = await mutation;
+    assert.equal(response.status, 403, 'A demoted member must lose manager permission before writing');
+    const after = await queryTestDatabase(
+      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+       FROM searches s WHERE s.id=$1`,
+      [searchId],
+    );
+    assert.deepEqual(after.rows[0], before.rows[0], 'Denied write must not change search data or append an audit event');
+  } finally {
+    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
+    blocker.release();
+    if (mutation) await mutation.catch(() => {});
+  }
+});
+
+test('Search PATCH rejects a session revoked while its transaction is starting', { timeout: 15000 }, async (t) => {
+  const searchId = await createSearch(tokens.coordinator, `Search Session Race ${Date.now()}`);
+  const before = await queryTestDatabase(
+    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+     FROM searches s WHERE s.id=$1`,
+    [searchId],
+  );
+  if (!(await lockActivityAvailable(t))) return;
+
+  const blocker = await connectTestDatabase();
+  let mutation;
+  let committed = false;
+  try {
+    await blocker.query('BEGIN');
+    const removed = await blocker.query('DELETE FROM sessions WHERE user_id=$1', [users.coordinator.id]);
+    assert.ok(removed.rowCount > 0, 'Expected a live session to revoke');
+    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.coordinator}` },
+      body: JSON.stringify({ title: 'Must not commit after logout' }),
+    });
+
+    assert.equal(
+      await waitForDatabaseLockWait('%FROM sessions%'),
+      true,
+      'PATCH did not wait for the session lock',
+    );
+    await blocker.query('COMMIT');
+    committed = true;
+
+    const response = await mutation;
+    assert.equal(response.status, 401, 'A revoked session must be rejected before writing');
+    const after = await queryTestDatabase(
+      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
+       FROM searches s WHERE s.id=$1`,
+      [searchId],
+    );
+    assert.deepEqual(after.rows[0], before.rows[0], 'Rejected write must not change search data or append an audit event');
+  } finally {
+    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
+    blocker.release();
+    if (mutation) await mutation.catch(() => {});
+  }
 });

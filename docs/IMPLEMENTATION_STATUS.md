@@ -9,6 +9,7 @@ This document records what is implemented in the current stabilization branch. I
 - Task reads require search access.
 - Task updates require search access; searchers may update only tasks assigned to themselves and cannot reassign or reprioritize them.
 - Task assignees must be members of the search.
+- Writes to existing searches revalidate the live session and actor role/status inside the transaction, hold the relevant session/user locks through commit, serialize with API membership changes per search, recheck access after lock waits, and check session expiry at commit. Mutation and audit records commit atomically.
 - GPS, events, members, snapshots, and search details require search access.
 - Offline snapshots check access and read all sections in one read-only repeatable-read transaction.
 - WebSocket handshake requires an authenticated session.

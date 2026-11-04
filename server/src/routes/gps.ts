@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { pool } from '../config.js';
-import { auth, parseId, requireSearchAccess } from '../http.js';
+import { auth, commitSearchMutation, parseId, requireSearchAccess, requireSearchWriteAccess } from '../http.js';
 
 const pointSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -15,12 +15,11 @@ const pointSchema = z.object({
 const gpsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/v1/searches/:id/gps', { preHandler: auth }, async (req) => {
     const id = parseId(req);
-    await requireSearchAccess(req, id);
-    const body = z.object({ points: z.array(pointSchema).min(1).max(1000) }).parse(req.body);
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await requireSearchWriteAccess(req, id, client);
+      const body = z.object({ points: z.array(pointSchema).min(1).max(1000) }).parse(req.body);
       for (const point of body.points) {
         await client.query(
           `INSERT INTO gps_points(search_id,user_id,lat,lng,accuracy,altitude,speed,recorded_at)
@@ -28,15 +27,14 @@ const gpsRoutes: FastifyPluginAsync = async (app) => {
           [id, req.user.id, point.lat, point.lng, point.accuracy ?? null, point.altitude ?? null, point.speed ?? null, point.recorded_at ?? null],
         );
       }
-      await client.query('COMMIT');
+      await commitSearchMutation(req, client);
+      return { ok: true, count: body.points.length };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
-
-    return { ok: true, count: body.points.length };
   });
 
   app.get('/api/v1/searches/:id/gps', { preHandler: auth }, async (req) => {
