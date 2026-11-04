@@ -1,9 +1,12 @@
 name: KuKLA CI
 
-# push: ['**'] — пайплайн гоняется на любой ветке, включая feature/* и qa/*.
-# Это нужно, чтобы каждую ветку плана видно было зелёной/красной до мержа в develop.
-# pull_request оставлен только для main/develop: иначе на ветку с открытым PR
-# приходилось бы по два запуска на каждый коммит (push + pull_request).
+# push checks every branch; pull_request adds checks for PRs targeting main/develop.
+# Push and PR events from the same head share a concurrency group below, so a
+# newer run cancels stale/duplicate work while preserving checks on the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ['**']
