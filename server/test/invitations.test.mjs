@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
@@ -17,7 +18,7 @@ const login = async (email, password) => {
 
 const ownerEmail = process.env.KUKLA_TEST_OWNER_EMAIL ?? 'owner@kukla.local';
 const ownerPassword = process.env.KUKLA_TEST_OWNER_PASSWORD ?? 'owner-pass-123456';
-await ensureTestOwner(ownerEmail, ownerPassword);
+const ownerId = await ensureTestOwner(ownerEmail, ownerPassword);
 const ownerToken = await login(ownerEmail, ownerPassword);
 const timestamp = Date.now();
 const invitedEmail = `invited-${timestamp}@test.local`;
@@ -92,6 +93,45 @@ test('concurrent acceptance of one invitation creates only one account and sessi
   });
   assert.equal(session.status, 200);
   assert.equal((await session.json()).id, accepted.user.id);
+});
+
+test('acceptance and revocation races produce exactly one terminal state', async () => {
+  const email = `accept-revoke-race-${timestamp}@test.local`;
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const inserted = await queryTestDatabase(
+    `INSERT INTO user_invitations(name,email,role,token_hash,invited_by,expires_at)
+     VALUES($1,$2,'SEARCHER',$3,$4,now()+interval '24 hours') RETURNING id`,
+    ['Acceptance/revocation race', email, tokenHash, ownerId],
+  );
+  const invitationId = inserted.rows[0].id;
+
+  const [acceptance, revocation] = await Promise.all([
+    fetch(`${base}/api/v1/auth/accept-invitation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password: 'race-test-password-1234' }),
+    }),
+    fetch(`${base}/api/v1/users/invitations/${invitationId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${ownerToken}` },
+    }),
+  ]);
+
+  if (acceptance.status === 200) {
+    assert.equal(revocation.status, 404);
+  } else {
+    assert.equal(acceptance.status, 400);
+    assert.equal(revocation.status, 200);
+  }
+
+  const state = await queryTestDatabase(
+    'SELECT accepted_at,revoked_at FROM user_invitations WHERE id=$1',
+    [invitationId],
+  );
+  assert.equal(Number(Boolean(state.rows[0].accepted_at)) + Number(Boolean(state.rows[0].revoked_at)), 1);
+  const user = await queryTestDatabase('SELECT id FROM users WHERE lower(email)=lower($1)', [email]);
+  assert.equal(user.rowCount, acceptance.status === 200 ? 1 : 0);
 });
 
 test('an invitation must provide exactly one valid contact method', async () => {
