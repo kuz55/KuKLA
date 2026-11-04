@@ -157,32 +157,35 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> desktop/src-tauri/target
       - run: npm ci
-      - name: Resolve native Cargo lockfile
-        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
-      - name: Export resolved Cargo lockfile
+      - name: Check native Rust dependencies
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: resolved-cargo-lock
-          path: desktop/src-tauri/Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check --manifest-path src-tauri/Cargo.toml 2>&1 | tee rust-check.log
+      - name: Export resolved Cargo.lock for bootstrap
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          base64 -w 8000 src-tauri/Cargo.lock | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
       - name: Build native Tauri bundle
         shell: bash
         run: |
           set -o pipefail
           npm run tauri -- build --ci --bundles ${{ matrix.bundle }} 2>&1 | tee tauri-build.log
-      - name: Publish Tauri build failure details
+      - name: Publish native build failure details
         if: failure()
         shell: bash
         run: |
-          if [ -f tauri-build.log ]; then
-            echo '## Tauri native build output' >> "$GITHUB_STEP_SUMMARY"
-            tail -n 150 tauri-build.log >> "$GITHUB_STEP_SUMMARY"
-            tail -n 20 tauri-build.log | while IFS= read -r line; do
-              echo "::error title=Tauri native build output::$line"
-            done
-          fi
+          for logfile in rust-check.log tauri-build.log; do
+            if [ -f "$logfile" ]; then
+              echo "## $logfile" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 150 "$logfile" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 20 "$logfile" | while IFS= read -r line; do
+                echo "::error title=Native build output::$line"
+              done
+            fi
+          done
 
   rebuild-go:
     name: Go engine (${{ matrix.os }})
