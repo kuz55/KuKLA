@@ -76,15 +76,15 @@ test('login with non-existent user returns 401 (indistinguishable from wrong pas
   assert.equal(data.message, 'Invalid credentials');
 });
 
-test('login with invalid payload returns 500 (F-02: ZodError not caught)', async () => {
+test('login with invalid payload returns 400 validation error', async () => {
   const r = await fetch(`${base}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'test@kukla.local', password: 'pass' }),
   });
-  assert.equal(r.status, 500);
+  assert.equal(r.status, 400);
   const data = await r.json();
-  assert.equal(data.error, 'ERROR');
+  assert.equal(data.error, 'VALIDATION_ERROR');
 });
 
 test('/me without token returns 401', async () => {

@@ -8,7 +8,6 @@ class Api { final String base; String? token; Api(this.base);
  Future<List<dynamic>> searches()=>request('/searches').then((x)=>List<dynamic>.from(x));
  Future<List<dynamic>> tasks(String id)=>request('/searches/$id/tasks').then((x)=>List<dynamic>.from(x));
  Future<List<dynamic>> gps(String id)=>request('/searches/$id/gps').then((x)=>List<dynamic>.from(x));
- Future<void> join(String id)=>request('/searches/$id/join',method:'POST');
  Future<void> taskStatus(String id,String status)=>request('/tasks/$id',method:'PATCH',body:{'status':status});
  Future<void> sendGps(String id,List<Map<String,dynamic>> points)=>request('/searches/$id/gps',method:'POST',body:{'points':points});
 }
