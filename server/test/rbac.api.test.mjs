@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
@@ -328,12 +329,12 @@ test('PATCH /users: last-active-admin guard (F-07: unreachable via API, see repo
 // Search isolation (canAccessSearch)
 // ============================================================================
 
-test('Search isolation: SEARCHER cannot access search they are not member of', async () => {
+test('Search isolation: a non-member receives 404 for an existing search', async () => {
   const searchId = await createSearch(tokens.leader);
   const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 404);
 });
 
 test('Search isolation: self-join cannot grant access; a manager can add a SEARCHER', async () => {
@@ -342,11 +343,17 @@ test('Search isolation: self-join cannot grant access; a manager can add a SEARC
     method: 'POST',
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
+  const unknownJoin = await fetch(`${base}/api/v1/searches/${randomUUID()}/join`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokens.searcher}` },
+  });
   assert.equal(joinR.status, 403);
+  assert.equal(unknownJoin.status, 403);
+  assert.deepEqual(await joinR.json(), await unknownJoin.json());
   const denied = await fetch(`${base}/api/v1/searches/${searchId}`, {
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
-  assert.equal(denied.status, 403);
+  assert.equal(denied.status, 404);
 
   const addR = await addMember(searchId, users.searcher.id);
   assert.equal(addR.status, 200);
@@ -364,18 +371,26 @@ test('Search isolation: SYSTEM_OWNER can access any search (privileged bypass)',
   assert.equal(r.status, 200);
 });
 
-test('Search isolation: VIEWER cannot access search even if they know id', async () => {
+test('Search isolation: a viewer receives 404 for an existing search outside their membership', async () => {
   const searchId = await createSearch(tokens.leader);
   const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
     headers: { Authorization: `Bearer ${tokens.viewer}` },
   });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 404);
 });
 
-test('Search membership: only an authorized manager may add a member, and repeats are idempotent', async () => {
+test('Search membership: unshared ids are hidden and only an authorized manager may add members', async () => {
   const searchId = await createSearch(tokens.leader);
   const denied = await addMember(searchId, users.viewer.id, tokens.searcher);
-  assert.equal(denied.status, 403);
+  const unknown = await addMember(randomUUID(), users.viewer.id, tokens.searcher);
+  assert.equal(denied.status, 404);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await denied.json(), await unknown.json());
+
+  const addSearcher = await addMember(searchId, users.searcher.id);
+  assert.equal(addSearcher.status, 200);
+  const memberDenied = await addMember(searchId, users.viewer.id, tokens.searcher);
+  assert.equal(memberDenied.status, 403);
 
   const first = await addMember(searchId, users.viewer.id);
   assert.equal(first.status, 200);
@@ -535,7 +550,7 @@ test('PATCH /tasks: SEARCHER cannot reassign tasks', async () => {
   assert.equal(r.status, 403);
 });
 
-test('PATCH /tasks: VIEWER returns 403 (no search access)', async () => {
+test('PATCH /tasks: existing and unknown task ids are indistinguishable outside membership', async () => {
   const searchId = await createSearch(tokens.leader);
   const taskR = await fetch(`${base}/api/v1/searches/${searchId}/tasks`, {
     method: 'POST',
@@ -544,10 +559,17 @@ test('PATCH /tasks: VIEWER returns 403 (no search access)', async () => {
   });
   assert.equal(taskR.status, 200);
   const task = await taskR.json();
-  const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
+  const existing = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.viewer}` },
     body: JSON.stringify({ status: 'IN_PROGRESS' }),
   });
-  assert.equal(r.status, 403);
+  const unknown = await fetch(`${base}/api/v1/tasks/${randomUUID()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.viewer}` },
+    body: JSON.stringify({ status: 'IN_PROGRESS' }),
+  });
+  assert.equal(existing.status, 404);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await existing.json(), await unknown.json());
 });

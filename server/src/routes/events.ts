@@ -1,8 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { managementRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { audit, auth, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
+import { audit, auth, parseId, requireSearchAccess, requireSearchManagement } from '../http.js';
 
 const eventRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/searches/:id/events', { preHandler: auth }, async (req) => {
@@ -16,7 +15,7 @@ const eventRoutes: FastifyPluginAsync = async (app) => {
 
   // System events are emitted by the API itself. Do not let client-supplied
   // arbitrary type strings forge lifecycle, membership or task audit entries.
-  app.post('/api/v1/searches/:id/events', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.post('/api/v1/searches/:id/events', { preHandler: auth }, async (req) => {
     const id = parseId(req);
     await requireSearchManagement(req, id);
     const body = z.object({ note: z.string().trim().min(1).max(2000) }).parse(req.body);

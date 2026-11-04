@@ -33,7 +33,7 @@ export const roles = (...allowed: Role[]) => async (req: FastifyRequest) => {
   if (!allowed.includes(req.user.role)) throw httpErrors.forbidden('Insufficient permissions');
 };
 
-export async function searchExists(searchId: string) {
+async function searchExists(searchId: string) {
   const r = await pool.query('SELECT id FROM searches WHERE id=$1', [searchId]);
   if (!r.rowCount) throw httpErrors.notFound('Search not found');
 }
@@ -50,11 +50,18 @@ async function canAccessSearch(user: User, searchId: string): Promise<boolean> {
 }
 
 export async function requireSearchAccess(req: FastifyRequest, searchId: string) {
-  await searchExists(searchId);
-  if (!(await canAccessSearch(req.user, searchId))) throw httpErrors.forbidden('Access to this search is denied');
+  // Do not check existence separately for non-privileged users: both a missing
+  // search and a search outside their membership must return the same 404.
+  if (privilegedRoles.includes(req.user.role)) {
+    await searchExists(searchId);
+    return;
+  }
+  if (!(await canAccessSearch(req.user, searchId))) throw httpErrors.notFound('Search not found');
 }
 
 export async function requireSearchManagement(req: FastifyRequest, searchId: string) {
+  // Check membership before management role so foreign and missing search IDs
+  // stay indistinguishable on manager-only resource routes.
   await requireSearchAccess(req, searchId);
   if (!managementRoles.includes(req.user.role)) throw httpErrors.forbidden('Search management permission required');
 }

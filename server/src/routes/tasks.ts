@@ -1,23 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
-import type { PoolClient } from 'pg';
 import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { managementRoles, privilegedRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { auth, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
-import { User } from '../types.js';
-
-async function requireTaskSearchAccess(client: PoolClient, user: User, searchId: string) {
-  if (privilegedRoles.includes(user.role)) return;
-  const access = await client.query(
-    `SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2
-     UNION SELECT 1 FROM search_organizations so
-     JOIN organization_members om ON om.organization_id=so.organization_id
-     WHERE so.search_id=$1 AND om.user_id=$2 AND om.active=true LIMIT 1`,
-    [searchId, user.id],
-  );
-  if (!access.rowCount) throw httpErrors.forbidden('Access to this search is denied');
-}
+import { auth, parseId, requireSearchAccess, requireSearchManagement } from '../http.js';
 
 const taskRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/searches/:id/tasks', { preHandler: auth }, async (req) => {
@@ -31,7 +17,7 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
     )).rows;
   });
 
-  app.post('/api/v1/searches/:id/tasks', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.post('/api/v1/searches/:id/tasks', { preHandler: auth }, async (req) => {
     const searchId = parseId(req);
     await requireSearchManagement(req, searchId);
     const body = z.object({
@@ -87,10 +73,28 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const current = await client.query('SELECT * FROM tasks WHERE id=$1 FOR UPDATE', [id]);
+      // Filter authorization in the locking query so a task outside the user's
+      // searches is neither distinguishable from a missing task nor locked.
+      const current = await client.query(
+        `SELECT t.* FROM tasks t
+         WHERE t.id=$1
+           AND (
+             $2::boolean
+             OR EXISTS (
+               SELECT 1 FROM search_members sm
+               WHERE sm.search_id=t.search_id AND sm.user_id=$3
+             )
+             OR EXISTS (
+               SELECT 1 FROM search_organizations so
+               JOIN organization_members om ON om.organization_id=so.organization_id
+               WHERE so.search_id=t.search_id AND om.user_id=$3 AND om.active=true
+             )
+           )
+         FOR UPDATE OF t`,
+        [id, privilegedRoles.includes(req.user.role), req.user.id],
+      );
       if (!current.rowCount) throw httpErrors.notFound('Task not found');
       const task = current.rows[0];
-      await requireTaskSearchAccess(client, req.user, task.search_id);
 
       const manager = managementRoles.includes(req.user.role);
       if (!privilegedRoles.includes(req.user.role) && !manager) {

@@ -3,7 +3,7 @@ import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { managementRoles, privilegedRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { auth, parseId, requireSearchAccess, requireSearchManagement, roles, searchExists } from '../http.js';
+import { auth, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
 import { Params } from '../types.js';
 
 const searchRoutes: FastifyPluginAsync = async (app) => {
@@ -82,7 +82,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.patch('/api/v1/searches/:id', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.patch('/api/v1/searches/:id', { preHandler: auth }, async (req) => {
     const id = parseId(req);
     await requireSearchManagement(req, id);
     const body = z.object({
@@ -150,12 +150,12 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
   // Membership is granted by an authorized manager. A self-join request must
   // never make operational data visible before the search team approves it.
   app.post('/api/v1/searches/:id/join', { preHandler: auth }, async (req) => {
-    const id = parseId(req);
-    await searchExists(id);
+    // Validate shape, but do not reveal whether the referenced operation exists.
+    parseId(req);
     throw httpErrors.forbidden('A search manager must add you to this operation');
   });
 
-  app.post('/api/v1/searches/:id/members', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.post('/api/v1/searches/:id/members', { preHandler: auth }, async (req) => {
     const id = parseId(req);
     await requireSearchManagement(req, id);
     const body = z.object({ userId: z.string().uuid() }).parse(req.body);
@@ -185,7 +185,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.delete('/api/v1/searches/:id/members/:userId', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.delete('/api/v1/searches/:id/members/:userId', { preHandler: auth }, async (req) => {
     const id = parseId(req);
     await requireSearchManagement(req, id);
     const userId = z.string().uuid().parse((req.params as Params).userId);
