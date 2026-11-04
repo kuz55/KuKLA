@@ -1,6 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeTestDatabase, createTestUser, ensureTestOwner } from './db.mjs';
+import { randomUUID } from 'node:crypto';
+import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
@@ -71,6 +72,12 @@ for (const [key, user] of Object.entries(users)) {
   users.systemOwner.id = (await me.json()).id;
 }
 
+const addMember = async (searchId, userId, token = tokens.leader) => fetch(`${base}/api/v1/searches/${searchId}/members`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  body: JSON.stringify({ userId }),
+});
+
 // ============================================================================
 // GET /api/v1/users — who can list users (managementRoles)
 // ============================================================================
@@ -131,6 +138,95 @@ test('PATCH /users: ADMIN can change LEADER role to COORDINATOR', async () => {
   assert.equal(r.status, 200);
   const data = await r.json();
   assert.equal(data.role, 'COORDINATOR');
+});
+
+test('PATCH /users: user change rolls back if its audit insert fails', async () => {
+  const email = `audit-rollback-${Date.now()}@test.local`;
+  const targetId = await createTestUser('SEARCHER', email);
+  const suffix = targetId.replaceAll('-', '');
+  const functionName = `fail_user_updated_${suffix}`;
+  const triggerName = `fail_user_updated_${suffix}`;
+
+  try {
+    await queryTestDatabase(`
+      CREATE FUNCTION ${functionName}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.type = 'USER_UPDATED' AND NEW.payload->>'userId' = '${targetId}' THEN
+          RAISE EXCEPTION 'Injected audit failure for integration test';
+        END IF;
+        RETURN NEW;
+      END
+      $$
+    `);
+    await queryTestDatabase(
+      `CREATE TRIGGER ${triggerName} BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION ${functionName}()`,
+    );
+
+    const response = await fetch(`${base}/api/v1/users/${targetId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+      body: JSON.stringify({ name: 'Must Roll Back' }),
+    });
+    assert.equal(response.status, 500);
+
+    const [user, auditEvent] = await Promise.all([
+      queryTestDatabase('SELECT name FROM users WHERE id=$1', [targetId]),
+      queryTestDatabase(
+        "SELECT id FROM events WHERE type='USER_UPDATED' AND payload->>'userId'=$1",
+        [targetId],
+      ),
+    ]);
+    assert.equal(user.rows[0].name, 'Test SEARCHER');
+    assert.equal(auditEvent.rowCount, 0);
+  } finally {
+    await queryTestDatabase(`DROP TRIGGER IF EXISTS ${triggerName} ON events`);
+    await queryTestDatabase(`DROP FUNCTION IF EXISTS ${functionName}()`);
+  }
+});
+
+test('PATCH /users: existing sessions reflect role changes and stop after deactivation', async () => {
+  const email = `live-role-${Date.now()}@test.local`;
+  const userId = await createTestUser('LEADER', email);
+  const token = await login(email, 'test-pass-123456');
+
+  const before = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(before.status, 200);
+  assert.equal((await before.json()).role, 'LEADER');
+
+  const demoted = await fetch(`${base}/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ role: 'SEARCHER' }),
+  });
+  assert.equal(demoted.status, 200);
+
+  const afterDemotion = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(afterDemotion.status, 200);
+  assert.equal((await afterDemotion.json()).role, 'SEARCHER');
+  const forbidden = await fetch(`${base}/api/v1/searches`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ title: 'Old role must not grant access' }),
+  });
+  assert.equal(forbidden.status, 403);
+
+  const deactivated = await fetch(`${base}/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.systemOwner}` },
+    body: JSON.stringify({ active: false }),
+  });
+  assert.equal(deactivated.status, 200);
+
+  const afterDeactivation = await fetch(`${base}/api/v1/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(afterDeactivation.status, 401);
+  assert.equal((await afterDeactivation.json()).message, 'Session expired or revoked');
 });
 
 test('PATCH /users: ADMIN cannot change SYSTEM_OWNER role', async () => {
@@ -233,25 +329,38 @@ test('PATCH /users: last-active-admin guard (F-07: unreachable via API, see repo
 // Search isolation (canAccessSearch)
 // ============================================================================
 
-test('Search isolation: SEARCHER cannot access search they are not member of', async () => {
+test('Search isolation: a non-member receives 404 for an existing search', async () => {
   const searchId = await createSearch(tokens.leader);
   const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 404);
 });
 
-test('Search isolation: SEARCHER can access search they joined', async () => {
+test('Search isolation: self-join cannot grant access; a manager can add a SEARCHER', async () => {
   const searchId = await createSearch(tokens.leader);
   const joinR = await fetch(`${base}/api/v1/searches/${searchId}/join`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
-  assert.equal(joinR.status, 200);
-  const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
+  const unknownJoin = await fetch(`${base}/api/v1/searches/${randomUUID()}/join`, {
+    method: 'POST',
     headers: { Authorization: `Bearer ${tokens.searcher}` },
   });
-  assert.equal(r.status, 200);
+  assert.equal(joinR.status, 403);
+  assert.equal(unknownJoin.status, 403);
+  assert.deepEqual(await joinR.json(), await unknownJoin.json());
+  const denied = await fetch(`${base}/api/v1/searches/${searchId}`, {
+    headers: { Authorization: `Bearer ${tokens.searcher}` },
+  });
+  assert.equal(denied.status, 404);
+
+  const addR = await addMember(searchId, users.searcher.id);
+  assert.equal(addR.status, 200);
+  const allowed = await fetch(`${base}/api/v1/searches/${searchId}`, {
+    headers: { Authorization: `Bearer ${tokens.searcher}` },
+  });
+  assert.equal(allowed.status, 200);
 });
 
 test('Search isolation: SYSTEM_OWNER can access any search (privileged bypass)', async () => {
@@ -262,12 +371,56 @@ test('Search isolation: SYSTEM_OWNER can access any search (privileged bypass)',
   assert.equal(r.status, 200);
 });
 
-test('Search isolation: VIEWER cannot access search even if they know id', async () => {
+test('Search isolation: a viewer receives 404 for an existing search outside their membership', async () => {
   const searchId = await createSearch(tokens.leader);
   const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
     headers: { Authorization: `Bearer ${tokens.viewer}` },
   });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 404);
+});
+
+test('Search membership: unshared ids are hidden and only an authorized manager may add members', async () => {
+  const searchId = await createSearch(tokens.leader);
+  const denied = await addMember(searchId, users.viewer.id, tokens.searcher);
+  const unknown = await addMember(randomUUID(), users.viewer.id, tokens.searcher);
+  assert.equal(denied.status, 404);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await denied.json(), await unknown.json());
+
+  const addSearcher = await addMember(searchId, users.searcher.id);
+  assert.equal(addSearcher.status, 200);
+  const memberDenied = await addMember(searchId, users.viewer.id, tokens.searcher);
+  assert.equal(memberDenied.status, 403);
+
+  const first = await addMember(searchId, users.viewer.id);
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).added, true);
+
+  const repeated = await addMember(searchId, users.viewer.id);
+  assert.equal(repeated.status, 200);
+  assert.equal((await repeated.json()).added, false);
+
+  const access = await fetch(`${base}/api/v1/searches/${searchId}`, {
+    headers: { Authorization: `Bearer ${tokens.viewer}` },
+  });
+  assert.equal(access.status, 200);
+});
+
+test('Audit stream accepts coordinator notes but rejects user-forged system event types', async () => {
+  const searchId = await createSearch(tokens.leader);
+  const note = await fetch(`${base}/api/v1/searches/${searchId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+    body: JSON.stringify({ note: 'Briefing completed' }),
+  });
+  assert.equal(note.status, 200);
+
+  const forged = await fetch(`${base}/api/v1/searches/${searchId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+    body: JSON.stringify({ type: 'SEARCH_CREATED', payload: { title: 'Fake' } }),
+  });
+  assert.equal(forged.status, 400);
 });
 
 // ============================================================================
@@ -342,11 +495,8 @@ test('PATCH /tasks: LEADER can update any task in their search', async () => {
 
 test('PATCH /tasks: SEARCHER can update their own assigned task', async () => {
   const searchId = await createSearch(tokens.leader);
-  const joinR = await fetch(`${base}/api/v1/searches/${searchId}/join`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${tokens.searcher}` },
-  });
-  assert.equal(joinR.status, 200);
+  const addR = await addMember(searchId, users.searcher.id);
+  assert.equal(addR.status, 200);
   const taskR = await fetch(`${base}/api/v1/searches/${searchId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
@@ -364,11 +514,8 @@ test('PATCH /tasks: SEARCHER can update their own assigned task', async () => {
 
 test('PATCH /tasks: SEARCHER cannot update task assigned to someone else', async () => {
   const searchId = await createSearch(tokens.leader);
-  const joinR = await fetch(`${base}/api/v1/searches/${searchId}/join`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${tokens.searcher}` },
-  });
-  assert.equal(joinR.status, 200);
+  const addR = await addMember(searchId, users.searcher.id);
+  assert.equal(addR.status, 200);
   const taskR = await fetch(`${base}/api/v1/searches/${searchId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
@@ -386,11 +533,8 @@ test('PATCH /tasks: SEARCHER cannot update task assigned to someone else', async
 
 test('PATCH /tasks: SEARCHER cannot reassign tasks', async () => {
   const searchId = await createSearch(tokens.leader);
-  const joinR = await fetch(`${base}/api/v1/searches/${searchId}/join`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${tokens.searcher}` },
-  });
-  assert.equal(joinR.status, 200);
+  const addR = await addMember(searchId, users.searcher.id);
+  assert.equal(addR.status, 200);
   const taskR = await fetch(`${base}/api/v1/searches/${searchId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
@@ -406,7 +550,7 @@ test('PATCH /tasks: SEARCHER cannot reassign tasks', async () => {
   assert.equal(r.status, 403);
 });
 
-test('PATCH /tasks: VIEWER returns 403 (no search access)', async () => {
+test('PATCH /tasks: existing and unknown task ids are indistinguishable outside membership', async () => {
   const searchId = await createSearch(tokens.leader);
   const taskR = await fetch(`${base}/api/v1/searches/${searchId}/tasks`, {
     method: 'POST',
@@ -415,10 +559,17 @@ test('PATCH /tasks: VIEWER returns 403 (no search access)', async () => {
   });
   assert.equal(taskR.status, 200);
   const task = await taskR.json();
-  const r = await fetch(`${base}/api/v1/tasks/${task.id}`, {
+  const existing = await fetch(`${base}/api/v1/tasks/${task.id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.viewer}` },
     body: JSON.stringify({ status: 'IN_PROGRESS' }),
   });
-  assert.equal(r.status, 403);
+  const unknown = await fetch(`${base}/api/v1/tasks/${randomUUID()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.viewer}` },
+    body: JSON.stringify({ status: 'IN_PROGRESS' }),
+  });
+  assert.equal(existing.status, 404);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await existing.json(), await unknown.json());
 });

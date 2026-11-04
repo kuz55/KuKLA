@@ -104,7 +104,7 @@ KuKLA предусматривает realtime-обмен через WebSocket/с
 
 RBAC должен проверяться **на сервере**, а не только в интерфейсе. Доступ к операциям, данным, GPS и административным функциям должен зависеть от роли и контекста конкретного поиска.
 
-В дальнейшем модель должна быть расширяема до подразделений, команд, приглашений, временных ролей и более детальных permissions.
+В текущем API есть администраторские одноразовые приглашения с проверкой роли; далее модель должна расширяться до подразделений, команд, временных ролей и более детальных permissions.
 
 ---
 
@@ -112,9 +112,9 @@ RBAC должен проверяться **на сервере**, а не тол
 
 ### Desktop
 
-Desktop-клиент является основным рабочим местом штаба и координаторов.
+Desktop-клиент — основное рабочее место штаба и координаторов. Целевой стек — **Go/C + GTK4** (`rebuild/`). Его текущий локальный сценарий пока не подключён к серверной синхронизации.
 
-Технологическая основа: **Tauri + React**.
+Старый **Tauri + React** (`desktop/`) сохранён как устаревающий эталон поведения и не является целевым клиентом.
 
 Предполагаемые рабочие разделы:
 
@@ -219,7 +219,7 @@ Snapshot API используется для первичной загрузки
 
 - **Fastify + TypeScript**;
 - **PostgreSQL** как основной database storage;
-- **Redis** для realtime/кэширования и инфраструктурных задач;
+- **Redis** зарезервирован для будущих очередей и realtime-расширения; текущий сервер его не использует;
 - WebSocket для realtime;
 - REST/API для клиентских операций.
 
@@ -381,18 +381,15 @@ KuKLA проектируется как платформа, а не как од�
                     │               │               │
               REST / API       WebSocket        Sync/Snapshot
                     │               │               │
-          ┌─────────┴──────┐   ┌────┴─────┐   ┌─────┴──────┐
-          │ Desktop Client │   │  Redis   │   │ PostgreSQL │
-          │ Tauri + React  │   │ realtime │   │  database  │
-          └────────────────┘   └──────────┘   └────────────┘
-                    │
-              Internet/LAN
-                    │
-          ┌─────────┴─────────┐
-          │   Mobile Client   │
-          │      Flutter      │
-          │ SQLite + Offline  │
-          └───────────────────┘
+          ┌─────────┴──────────────┐   ┌──────────────┐
+          │ Go/C + GTK4 (target)   │   │ PostgreSQL   │
+          │ local-only prototype   │   │ authoritative │
+          └────────────────────────┘   └──────────────┘
+                    │                         ▲
+                    └──── sync not built ─────┘
+
+       Legacy Tauri/React (`desktop/`) remains a behavior reference.
+       Flutter is the field-client target; full offline sync is not complete.
 ```
 
 ---
@@ -529,14 +526,9 @@ KuKLA находится в активной разработке. Репози�
 
 См. `docs/DEPLOYMENT.md`.
 
-### Development credentials
+### Initial account
 
-- `admin@kukla.local` / `admin12345`
-- `leader@kukla.local` / `leader12345`
-- `coordinator@kukla.local` / `coord12345`
-- `searcher@kukla.local` / `searcher123`
-
-**Только для разработки. Не использовать в production.**
+Database migrations intentionally create no demo users or reusable passwords. On a new local install, run `./infrastructure/install.sh` and create the first `SYSTEM_OWNER` when prompted. For a manually started stack, use `infrastructure/scripts/bootstrap-owner.sh` after the database is ready. See `docs/SECURITY_BOOTSTRAP.md`.
 
 ---
 

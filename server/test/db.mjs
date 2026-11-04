@@ -44,4 +44,6 @@ export const ensureTestOwner = async (
   }
 };
 
+export const queryTestDatabase = (text, values = []) => pool.query(text, values);
+
 export const closeTestDatabase = async () => pool.end();

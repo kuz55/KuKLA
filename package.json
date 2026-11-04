@@ -1,0 +1,23 @@
+{
+  "name": "kukla",
+  "version": "1.0.0",
+  "description": "> **KuKLA** — цифровая координационная система для поисково-спасательных отрядов и управления полевыми поисковыми операциями. > > **KuKLA** is a digital command, coordination and field-operations platform for search-and-rescue teams.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kuz55/KuKLA.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kuz55/KuKLA/issues"
+  },
+  "homepage": "https://github.com/kuz55/KuKLA#readme"
+}
