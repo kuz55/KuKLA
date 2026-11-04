@@ -73,7 +73,8 @@ This roadmap converts the product requirements and gap analysis into executable 
 
 - [ ] Complete automated unit/integration/API tests.
 - [ ] Migration verification in CI.
-- [ ] Mobile build checks, release signing, and verification of the configured Tauri Windows MSI/Linux DEB jobs; add macOS native packaging in a later increment.
+- [x] Verify native Tauri bundle CI for Windows MSI and Linux DEB.
+- [ ] Mobile build checks, release signing, and macOS native packaging (planned for a later increment).
 - [ ] Security scanning.
 - [ ] Backup and restore drills.
 - [ ] Observability and structured logs.
