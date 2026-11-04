@@ -29,7 +29,7 @@
 В текущей ветке найдены:
 
 - `server/src/` — Fastify/TypeScript API;
-- `server/sql/001_init.sql`–`008_backfill_search_creators.sql` — SQL-миграции PostgreSQL;
+- `server/sql/001_init.sql`–`009_user_invitations.sql` — SQL-миграции PostgreSQL;
 - `desktop/src/` и `desktop/src-tauri/` — React-клиент в оболочке Tauri/Rust;
 - `mobile/lib/` — Flutter-клиент с локальным SQLite-кэшем и очередью команд;
 - `infrastructure/docker-compose.yml` и скрипты резервного копирования/восстановления;

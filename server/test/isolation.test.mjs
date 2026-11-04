@@ -41,14 +41,19 @@ for (const [k, u] of Object.entries(U)) T[k] = await login(u.email, u.password);
 const H = (t) => ({ Authorization: `Bearer ${t}` });
 const J = (t) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${t}` });
 
-// Fixture: leader creates a search, searcher joins (member), viewer and leader2 stay outside
+// Fixture: a leader creates a search and explicitly adds the searcher.
+// A self-join request must not grant access; viewer and leader2 stay outside.
 const createR = await fetch(`${base}/api/v1/searches`, {
   method: 'POST', headers: J(T.leader), body: JSON.stringify({ title: `Isolation Search ${ts}` }),
 });
 assert.equal(createR.status, 200);
 const searchId = (await createR.json()).id;
 const joinR = await fetch(`${base}/api/v1/searches/${searchId}/join`, { method: 'POST', headers: H(T.searcher) });
-assert.equal(joinR.status, 200);
+assert.equal(joinR.status, 403);
+const addR = await fetch(`${base}/api/v1/searches/${searchId}/members`, {
+  method: 'POST', headers: J(T.leader), body: JSON.stringify({ userId: U.searcher.id }),
+});
+assert.equal(addR.status, 200);
 
 // ============================================================================
 // Non-member (VIEWER): every nested resource must be 403
@@ -118,6 +123,13 @@ test('Isolation: non-member LEADER DELETE member → 403', async () => {
   assert.equal(r.status, 403);
 });
 
+test('Isolation: non-member LEADER cannot add users to a foreign search', async () => {
+  const r = await fetch(`${base}/api/v1/searches/${searchId}/members`, {
+    method: 'POST', headers: J(T.leader2), body: JSON.stringify({ userId: U.viewer.id }),
+  });
+  assert.equal(r.status, 403);
+});
+
 // ============================================================================
 // Member (SEARCHER): positive control — nested resources accessible
 // ============================================================================
@@ -137,11 +149,11 @@ test('Isolation: member SEARCHER GET snapshot → 200 with sections', async () =
   assert.ok(Array.isArray(data.tasks));
 });
 
-test('Isolation: member SEARCHER POST events → 200', async () => {
+test('Isolation: member SEARCHER cannot forge events in the audit stream', async () => {
   const r = await fetch(`${base}/api/v1/searches/${searchId}/events`, {
-    method: 'POST', headers: J(T.searcher), body: JSON.stringify({ type: 'QA_TEST_EVENT' }),
+    method: 'POST', headers: J(T.searcher), body: JSON.stringify({ type: 'SEARCH_CREATED', payload: { title: 'Forged' } }),
   });
-  assert.equal(r.status, 200);
+  assert.equal(r.status, 403);
 });
 
 test('Isolation: member SEARCHER POST gps → 200', async () => {

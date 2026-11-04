@@ -11,13 +11,13 @@ logs:
 	cd infrastructure && docker compose logs -f server
 
 health:
-	curl -fsS http://127.0.0.1:8080/health
+	curl -fsS http://127.0.0.1:18080/ready
 
 server:
-	cd server && npm install && npm run build
+	cd server && npm ci && npm run build
 
 desktop:
-	cd desktop && npm install && npm run build
+	cd desktop && npm ci && npm run build
 
 mobile:
 	cd mobile && flutter pub get && flutter analyze

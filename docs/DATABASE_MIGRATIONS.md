@@ -57,6 +57,7 @@ migration runner.
 006_security_integrity.sql
 007_disable_legacy_seed_accounts.sql
 008_backfill_search_creators.sql
+009_user_invitations.sql
 ```
 
 Runner хранит применённые версии в таблице `schema_migrations`, поэтому
@@ -76,10 +77,11 @@ Runner хранит применённые версии в таблице `schem
 
 после того, как эта миграция была выполнена в среде.
 
-Вместо этого создаётся новая миграция:
+Вместо этого создаётся новая миграция с номером после уже применённых,
+например:
 
 ```text
-006_...
+010_...
 ```
 
 Принцип:
@@ -372,17 +374,24 @@ ROLLBACK
 
 ---
 
+## 009_user_invitations.sql
+
+Добавляет хранилище одноразовых приглашений. В БД хранится только SHA-256
+хеш токена; приглашение привязано к инициатору, роли и сроку действия.
+Принятие создаёт учётную запись и сессию в одной транзакции.
+
+---
+
 # 10. Следующая миграция
 
-Следующей должна быть:
+Следующей для GIS должна быть:
 
 ```text
-009_gis_foundation.sql
+010_gis_foundation.sql
 ```
 
-(В документе ниже номера GIS/треков приведены как проектные; фактически
-номера 006–008 уже заняты security/backfill-миграциями, поэтому GIS
-сдвигается на 009 и далее.)
+(Номера 006–009 уже заняты security, backfill и onboarding-миграциями;
+проектные GIS/track/sync migrations сдвигаются на 010 и далее.)
 
 Migration runner к этому моменту уже внедрён, поэтому новая миграция больше
 не зависит от механизма начальной инициализации Docker.
@@ -473,12 +482,12 @@ invalid = 0
 
 ---
 
-# 14. 010 — GPS и треки
+# 14. 011 — GPS и треки
 
 Следующая миграция:
 
 ```text
-007_tracks_and_gps.sql
+011_tracks_and_gps.sql
 ```
 
 Цель:
@@ -524,12 +533,12 @@ GPS-точка должна иметь возможность однозначн
 
 ---
 
-# 16. 011 — Sync Hardening
+# 16. 012 — Sync Hardening
 
 Миграция:
 
 ```text
-008_sync_hardening.sql
+012_sync_hardening.sql
 ```
 
 Цель:
@@ -565,12 +574,12 @@ ACK
 
 ---
 
-# 17. 012 — Permissions
+# 17. 013 — Permissions
 
 Миграция:
 
 ```text
-009_permissions.sql
+013_permissions.sql
 ```
 
 Цель:
@@ -597,12 +606,12 @@ role_permissions
 
 ---
 
-# 18. 013 — Organization Isolation
+# 18. 014 — Organization Isolation
 
 Миграция:
 
 ```text
-010_organization_isolation.sql
+014_organization_isolation.sql
 ```
 
 Цель:
@@ -630,12 +639,12 @@ Resource
 
 ---
 
-# 19. 014 — Audit Hardening
+# 19. 015 — Audit Hardening
 
 Миграция:
 
 ```text
-011_audit_hardening.sql
+015_audit_hardening.sql
 ```
 
 Разделить:
@@ -672,12 +681,12 @@ SENSITIVE_DATA_EXPORT
 
 ---
 
-# 20. 015 — Notifications / Emergency
+# 20. 016 — Notifications / Emergency
 
 Миграция:
 
 ```text
-012_notifications_emergency.sql
+016_notifications_emergency.sql
 ```
 
 Цель:
@@ -700,12 +709,12 @@ Emergency остаётся самостоятельным объектом.
 
 ---
 
-# 21. 016 — Database Integrity
+# 21. 017 — Database Integrity
 
 Миграция:
 
 ```text
-013_database_integrity.sql
+017_database_integrity.sql
 ```
 
 Проверяет и при необходимости усиливает:
@@ -723,12 +732,12 @@ Emergency остаётся самостоятельным объектом.
 
 ---
 
-# 22. 017 — Cleanup
+# 22. 018 — Cleanup
 
 Миграция:
 
 ```text
-014_cleanup.sql
+018_cleanup.sql
 ```
 
 Используется только после подтверждения, что старые структуры больше не нужны.
@@ -972,19 +981,21 @@ Monitoring
           ↓
 5. migration tests           — реализовано (server/test/migrations.test.mjs)
           ↓
-6. 006–008                   — применены (security integrity, legacy seed, backfill)
+6. 006–008                   — security integrity, legacy seed, backfill
           ↓
-7. 009_gis_foundation
+7. 009_user_invitations      — добавлена (проверка/применение ожидают PostgreSQL)
           ↓
-8. 010_tracks_and_gps
+8. 010_gis_foundation
           ↓
-9. 011_sync_hardening
+9. 011_tracks_and_gps
           ↓
-10. 012_permissions
+10. 012_sync_hardening
           ↓
-11. 013_organization_isolation
+11. 013_permissions
           ↓
-12. дальнейшие hardening migrations
+12. 014_organization_isolation
+          ↓
+13. дальнейшие hardening migrations
 ```
 
 Migration runner внедрён и покрыт тестами, поэтому дальнейшие миграции

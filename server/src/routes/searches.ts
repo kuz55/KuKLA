@@ -1,24 +1,217 @@
 import { FastifyPluginAsync } from 'fastify';
+import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { managementRoles, privilegedRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { audit, auth, parseId, requireSearchAccess, requireSearchManagement, roles, searchExists } from '../http.js';
+import { auth, parseId, requireSearchAccess, requireSearchManagement, roles, searchExists } from '../http.js';
 import { Params } from '../types.js';
 
 const searchRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/api/v1/searches',{preHandler:auth},async(req)=>{
-    const privileged=privilegedRoles.includes(req.user.role);
-    const query=privileged
-      ? `SELECT s.*,u.name creator,(SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,(SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,(SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points FROM searches s LEFT JOIN users u ON u.id=s.created_by ORDER BY s.created_at DESC`
-      : `SELECT s.*,u.name creator,(SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,(SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,(SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points FROM searches s LEFT JOIN users u ON u.id=s.created_by WHERE EXISTS (SELECT 1 FROM search_members sm WHERE sm.search_id=s.id AND sm.user_id=$1) OR EXISTS (SELECT 1 FROM search_organizations so JOIN organization_members om ON om.organization_id=so.organization_id WHERE so.search_id=s.id AND om.user_id=$1 AND om.active=true) ORDER BY s.created_at DESC`;
-    return (await pool.query(query,privileged?[]:[req.user.id])).rows;
+  app.get('/api/v1/searches', { preHandler: auth }, async (req) => {
+    const privileged = privilegedRoles.includes(req.user.role);
+    const query = privileged
+      ? `SELECT s.*,u.name creator,
+           (SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,
+           (SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,
+           (SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points
+         FROM searches s LEFT JOIN users u ON u.id=s.created_by
+         ORDER BY s.created_at DESC`
+      : `SELECT s.*,u.name creator,
+           (SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,
+           (SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,
+           (SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points
+         FROM searches s LEFT JOIN users u ON u.id=s.created_by
+         WHERE EXISTS (
+           SELECT 1 FROM search_members sm WHERE sm.search_id=s.id AND sm.user_id=$1
+         ) OR EXISTS (
+           SELECT 1 FROM search_organizations so
+           JOIN organization_members om ON om.organization_id=so.organization_id
+           WHERE so.search_id=s.id AND om.user_id=$1 AND om.active=true
+         )
+         ORDER BY s.created_at DESC`;
+    return (await pool.query(query, privileged ? [] : [req.user.id])).rows;
   });
-  app.get('/api/v1/searches/:id',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);const r=await pool.query(`SELECT s.*,u.name creator,(SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,(SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,(SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points FROM searches s LEFT JOIN users u ON u.id=s.created_by WHERE s.id=$1`,[id]);return r.rows[0];});
-  app.post('/api/v1/searches',{preHandler:roles(...managementRoles)},async(req)=>{const b=z.object({title:z.string().min(2),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().min(-90).max(90).optional(),incident_lng:z.number().min(-180).max(180).optional()}).parse(req.body);const r=await pool.query('INSERT INTO searches(title,area,description,incident_lat,incident_lng,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[b.title,b.area??null,b.description??null,b.incident_lat??null,b.incident_lng??null,req.user.id]);await pool.query('INSERT INTO search_members(search_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[r.rows[0].id,req.user.id]);await audit(r.rows[0].id,req.user.id,'SEARCH_CREATED',{title:b.title});return r.rows[0];});
-  app.patch('/api/v1/searches/:id',{preHandler:roles(...managementRoles)},async(req)=>{const id=parseId(req);await requireSearchManagement(req,id);const b=z.object({status:z.enum(['PLANNED','ACTIVE','PAUSED','COMPLETED','CANCELLED']).optional(),title:z.string().min(2).optional(),area:z.string().optional(),description:z.string().optional(),incident_lat:z.number().min(-90).max(90).optional(),incident_lng:z.number().min(-180).max(180).optional()}).parse(req.body);const r=await pool.query(`UPDATE searches SET title=COALESCE($1,title),area=COALESCE($2,area),description=COALESCE($3,description),status=COALESCE($4,status),incident_lat=COALESCE($5,incident_lat),incident_lng=COALESCE($6,incident_lng),started_at=CASE WHEN $4='ACTIVE' AND started_at IS NULL THEN now() ELSE started_at END,ended_at=CASE WHEN $4 IN ('COMPLETED','CANCELLED') THEN now() ELSE ended_at END WHERE id=$7 RETURNING *`,[b.title??null,b.area??null,b.description??null,b.status??null,b.incident_lat??null,b.incident_lng??null,id]);await audit(id,req.user.id,'SEARCH_UPDATED',{changes:b});return r.rows[0];});
-  app.get('/api/v1/searches/:id/members',{preHandler:auth},async(req)=>{const id=parseId(req);await requireSearchAccess(req,id);return (await pool.query(`SELECT u.id,u.name,u.email,u.phone,u.role,m.joined_at FROM search_members m JOIN users u ON u.id=m.user_id WHERE m.search_id=$1 ORDER BY m.joined_at`,[id])).rows;});
-  app.post('/api/v1/searches/:id/join',{preHandler:auth},async(req)=>{const id=parseId(req);await searchExists(id);await pool.query('INSERT INTO search_members(search_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[id,req.user.id]);await audit(id,req.user.id,'MEMBER_JOINED');return {ok:true};});
-  app.delete('/api/v1/searches/:id/members/:userId',{preHandler:roles(...managementRoles)},async(req)=>{const id=parseId(req);await requireSearchManagement(req,id);const uid=z.string().uuid().parse((req.params as Params).userId);await pool.query('DELETE FROM search_members WHERE search_id=$1 AND user_id=$2',[id,uid]);await audit(id,req.user.id,'MEMBER_REMOVED',{userId:uid});return {ok:true};});
+
+  app.get('/api/v1/searches/:id', { preHandler: auth }, async (req) => {
+    const id = parseId(req);
+    await requireSearchAccess(req, id);
+    const result = await pool.query(
+      `SELECT s.*,u.name creator,
+         (SELECT count(*) FROM search_members m WHERE m.search_id=s.id) member_count,
+         (SELECT count(*) FROM tasks t WHERE t.search_id=s.id AND t.status NOT IN ('DONE','CANCELLED')) open_tasks,
+         (SELECT count(*) FROM gps_points g WHERE g.search_id=s.id) gps_points
+       FROM searches s LEFT JOIN users u ON u.id=s.created_by WHERE s.id=$1`,
+      [id],
+    );
+    return result.rows[0];
+  });
+
+  app.post('/api/v1/searches', { preHandler: roles(...managementRoles) }, async (req) => {
+    const body = z.object({
+      title: z.string().min(2),
+      area: z.string().optional(),
+      description: z.string().optional(),
+      incident_lat: z.number().min(-90).max(90).optional(),
+      incident_lng: z.number().min(-180).max(180).optional(),
+    }).parse(req.body);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO searches(title,area,description,incident_lat,incident_lng,created_by)
+         VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [body.title, body.area ?? null, body.description ?? null, body.incident_lat ?? null, body.incident_lng ?? null, req.user.id],
+      );
+      const search = result.rows[0];
+      await client.query(
+        'INSERT INTO search_members(search_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+        [search.id, req.user.id],
+      );
+      await client.query(
+        'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
+        [search.id, req.user.id, 'SEARCH_CREATED', { title: body.title }],
+      );
+      await client.query('COMMIT');
+      return search;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.patch('/api/v1/searches/:id', { preHandler: roles(...managementRoles) }, async (req) => {
+    const id = parseId(req);
+    await requireSearchManagement(req, id);
+    const body = z.object({
+      status: z.enum(['PLANNED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
+      title: z.string().min(2).optional(),
+      area: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      incident_lat: z.number().min(-90).max(90).nullable().optional(),
+      incident_lng: z.number().min(-180).max(180).nullable().optional(),
+    }).refine((value) => Object.keys(value).length > 0, { message: 'Nothing to update' }).parse(req.body);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `UPDATE searches SET
+           title=CASE WHEN $1::boolean THEN $2 ELSE title END,
+           area=CASE WHEN $3::boolean THEN $4 ELSE area END,
+           description=CASE WHEN $5::boolean THEN $6 ELSE description END,
+           status=CASE WHEN $7::boolean THEN $8 ELSE status END,
+           incident_lat=CASE WHEN $9::boolean THEN $10 ELSE incident_lat END,
+           incident_lng=CASE WHEN $11::boolean THEN $12 ELSE incident_lng END,
+           started_at=CASE WHEN $7 AND $8='ACTIVE' AND started_at IS NULL THEN now() ELSE started_at END,
+           ended_at=CASE
+             WHEN $7 AND $8 IN ('COMPLETED','CANCELLED') THEN now()
+             WHEN $7 AND $8='ACTIVE' THEN NULL
+             ELSE ended_at
+           END
+         WHERE id=$13 RETURNING *`,
+        [
+          body.title !== undefined, body.title ?? null,
+          body.area !== undefined, body.area,
+          body.description !== undefined, body.description,
+          body.status !== undefined, body.status ?? null,
+          body.incident_lat !== undefined, body.incident_lat,
+          body.incident_lng !== undefined, body.incident_lng,
+          id,
+        ],
+      );
+      await client.query(
+        'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
+        [id, req.user.id, 'SEARCH_UPDATED', { changes: body }],
+      );
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get('/api/v1/searches/:id/members', { preHandler: auth }, async (req) => {
+    const id = parseId(req);
+    await requireSearchAccess(req, id);
+    return (await pool.query(
+      `SELECT u.id,u.name,u.email,u.phone,u.role,m.joined_at
+       FROM search_members m JOIN users u ON u.id=m.user_id
+       WHERE m.search_id=$1 ORDER BY m.joined_at`,
+      [id],
+    )).rows;
+  });
+
+  // Membership is granted by an authorized manager. A self-join request must
+  // never make operational data visible before the search team approves it.
+  app.post('/api/v1/searches/:id/join', { preHandler: auth }, async (req) => {
+    const id = parseId(req);
+    await searchExists(id);
+    throw httpErrors.forbidden('A search manager must add you to this operation');
+  });
+
+  app.post('/api/v1/searches/:id/members', { preHandler: roles(...managementRoles) }, async (req) => {
+    const id = parseId(req);
+    await requireSearchManagement(req, id);
+    const body = z.object({ userId: z.string().uuid() }).parse(req.body);
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      const target = await client.query('SELECT id FROM users WHERE id=$1 AND active=true FOR SHARE', [body.userId]);
+      if (!target.rowCount) throw httpErrors.notFound('Active user not found');
+      const added = await client.query(
+        'INSERT INTO search_members(search_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user_id',
+        [id, body.userId],
+      );
+      if (added.rowCount) {
+        await client.query(
+          'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
+          [id, req.user.id, 'MEMBER_ADDED', { userId: body.userId }],
+        );
+      }
+      await client.query('COMMIT');
+      return { ok: true, added: Boolean(added.rowCount) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete('/api/v1/searches/:id/members/:userId', { preHandler: roles(...managementRoles) }, async (req) => {
+    const id = parseId(req);
+    await requireSearchManagement(req, id);
+    const userId = z.string().uuid().parse((req.params as Params).userId);
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      const removed = await client.query(
+        'DELETE FROM search_members WHERE search_id=$1 AND user_id=$2 RETURNING user_id',
+        [id, userId],
+      );
+      if (removed.rowCount) {
+        await client.query(
+          'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
+          [id, req.user.id, 'MEMBER_REMOVED', { userId }],
+        );
+      }
+      await client.query('COMMIT');
+      return { ok: true, removed: Boolean(removed.rowCount) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
 };
 
 export default searchRoutes;

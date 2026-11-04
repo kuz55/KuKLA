@@ -1,47 +1,32 @@
-# Release status: KuKLA 2.1.0
+# KuKLA 2.1 status
 
-Implemented:
-- Linux-first Docker server.
-- PostgreSQL schema and development seed.
-- JWT authentication and RBAC.
-- Search lifecycle.
-- Members.
-- Tasks.
-- Audit events.
-- GPS ingestion and retrieval.
-- Snapshot API.
-- WebSocket handshake endpoint.
-- Desktop Tauri/React operational UI.
-- Desktop OpenStreetMap operational map.
-- Flutter field UI.
-- Mobile SQLite cache and offline command queue.
-- Mobile GPS collection/transmission.
-- Docker backup/restore scripts.
-- GitLab CI configuration.
+This file separates the product target from behavior present in the repository. The project is an MVP in active transition; it is not a certified or field-ready rescue system.
 
-Not bundled because they are environment-specific:
-- Node modules.
-- Rust/Cargo registries.
-- Flutter SDK/platform generated folders.
-- TLS certificates.
-- Production secrets.
+## Working foundations
 
-Before real rescue operations:
-- Complete production hardening.
-- Add push notifications.
-- Add durable realtime event fan-out via Redis/WebSocket.
-- Validate background GPS behavior on target Android/iOS versions.
-- Perform security and field acceptance testing.
+- Fastify/TypeScript API backed by PostgreSQL, with transactional/checksummed schema migrations.
+- Email/phone plus password login, bcrypt password hashes, JWT-backed sessions, global roles and search-membership checks.
+- Search CRUD, search membership, tasks, events, GPS ingestion/retrieval and a snapshot endpoint.
+- Minimal legacy Tauri/React command UI and an OpenStreetMap view.
+- Minimal Flutter field UI with foreground GPS and a local SQLite cache/command-queue foundation.
+- Go/C + GTK4 engine with private local IPC, SQLite migrations, local search create/list/read, local questionnaire and role catalog.
+- Docker Compose, backup/restore scripts and GitHub Actions for server, legacy desktop, Go and GTK builds.
 
-## Target stack transition
+## Target architecture
 
-The project is transitioning to a Go/C desktop client. Current position:
-
-- `server/` (Fastify/TypeScript, PostgreSQL) remains the authoritative contract and is extended, not replaced.
-- `rebuild/` (Go/C, GTK4, SQLite) already performs a local create/list/read search workflow, stores data in SQLite, packages a portable Windows build in CI, and implements the local questionnaire and role catalog.
-- `desktop/` (Tauri/React) is **deprecated**; it stays as a behavior reference until the Go/C client reaches parity.
+- `server/` + PostgreSQL remain authoritative for shared operational state.
+- `rebuild/` (Go/C, GTK4) is the target desktop client. Its current local workflow is **not** yet connected to the server.
 - `mobile/` (Flutter) remains the field client.
+- `desktop/` (Tauri/React) is deprecated and is only a behavior reference until the Go/C client reaches parity.
+- Redis is present in Compose but unused by current server code.
 
-Not yet implemented in the Go/C client: phone/OTP sign-in and server connection, authenticated role assignment and review, task and group screens, maps and offline map packages, request intake, media pipeline, notifications, synchronization, backup/restore and database encryption.
+## Not yet field-ready
 
-Data ownership between server and client is fixed in [ADR-0001](adr/0001-data-ownership-server-vs-local.md); the per-entity breakdown is in [`DATA_OWNERSHIP.md`](DATA_OWNERSHIP.md).
+- Invitation delivery and target-client onboarding. Admin-only one-time API tokens plus a temporary create/revoke/accept flow exist in the legacy Tauri/React desktop client. Email/SMS delivery, Go/C and mobile screens, and request/approval workflows remain pending.
+- Complete per-resource authorization, organization/team workflows, task assignment lifecycle, subject intake, sectors and operational-period management.
+- WebSocket event fan-out, notifications, GPS idempotency and the end-to-end offline synchronization/conflict protocol.
+- Mobile task/GPS snapshot persistence, secure token storage, background GPS service and managed offline maps.
+- Go/C server authentication/synchronization, server-backed operations, maps, task screens, backup/restore and database encryption.
+- Production observability, retention policy, restore drills, independent security review and field acceptance.
+
+Do not use the current build as the sole coordination or safety system for a live rescue operation. Continue with [ARCHITECTURE.md](ARCHITECTURE.md), [GAP_ANALYSIS.md](GAP_ANALYSIS.md) and [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) when planning the next product increments.
