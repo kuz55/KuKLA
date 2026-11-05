@@ -11,7 +11,7 @@ Legend:
 | Capability | Current state | Next implementation |
 |---|---|---|
 | Authentication | PARTIAL | harden secrets, sessions, rate limits, lifecycle |
-| RBAC | PARTIAL | invite-only `REGIONAL_MANAGER` exists with direct-search/active-organization membership scope; structured region assignment, global audit scope review, and broader resource-level authorization remain open |
+| RBAC | PARTIAL | invitation-enabled `REGIONAL_MANAGER` exists with direct-search/active-organization membership scope; structured region assignment, global audit scope review, and broader resource-level authorization remain open |
 | Search lifecycle | DONE | formal incident model and transitions |
 | Subject profile | PARTIAL | management-only API/desktop slice exists with component tests for list/create/update and online-only failure states; finish workflow acceptance, privacy/retention decisions, production audit verification and the degraded-network contract before marking complete |
 | Organizations | MISSING | organization and membership model |

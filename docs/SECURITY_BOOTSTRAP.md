@@ -8,7 +8,7 @@ KuKLA must never ship reusable administrator passwords in source control.
 - `SUPERADMIN` is a delegated system administrator.
 - `SUPERUSER` is retained as a compatibility role during the RBAC migration.
 - `ADMIN`, `LEADER`, `COORDINATOR`, `REGIONAL_MANAGER`, `SEARCHER`, and `VIEWER` are operational roles.
-- `REGIONAL_MANAGER` is invite-only and is not a global/privileged role. It can manage a search only after passing the normal direct-search or active-organization membership check; it cannot create searches or manage global users/invitations. A structured region model and global audit access remain unimplemented pending review.
+- `REGIONAL_MANAGER` can be onboarded by administrator-issued invitation and is not a global/privileged role. Public registration cannot self-assign this role; authorized admins may also change an existing account's role. It can manage a search only after passing the normal direct-search or active-organization membership check; it cannot create searches or manage global users/invitations. A structured region model and global audit access remain unimplemented pending review.
 
 GitHub contributor permissions and KuKLA application permissions are independent. Being a project contributor must never grant a user a KuKLA system role.
 
