@@ -167,7 +167,7 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: |
-          base64 -w 8000 src-tauri/Cargo.lock | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
+          base64 -w 3500 src-tauri/Cargo.lock | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
       - name: Build native Tauri bundle
         shell: bash
         run: |
@@ -181,9 +181,16 @@ jobs:
             if [ -f "$logfile" ]; then
               echo "## $logfile" >> "$GITHUB_STEP_SUMMARY"
               tail -n 150 "$logfile" >> "$GITHUB_STEP_SUMMARY"
-              tail -n 20 "$logfile" | while IFS= read -r line; do
-                echo "::error title=Native build output::$line"
-              done
+              matches=$(grep -iE 'error(\[[A-Z0-9]+\])?:|failed|could not|cannot|not found|undefined reference|panicked' "$logfile" | tail -n 20 || true)
+              if [ -n "$matches" ]; then
+                while IFS= read -r line; do
+                  echo "::error title=Native build error::$line"
+                done <<< "$matches"
+              else
+                tail -n 6 "$logfile" | while IFS= read -r line; do
+                  echo "::error title=Native build output::$line"
+                done
+              fi
             fi
           done
 
