@@ -49,10 +49,10 @@ VALUES ('local-installation', 'SEARCHER', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now
 
 Основанием для прав служат:
 
-1. **глобальная роль** пользователя (`SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `SEARCHER`, `VIEWER`);
-2. **членство** в поисковой операции (`search_members`) или в организации (`organization_members`), с учётом участия организации в операции (`search_organizations`).
+1. **глобальная роль** пользователя (`SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `REGIONAL_MANAGER`, `SEARCHER`, `VIEWER`);
+2. **членство** в поисковой операции (`search_members`) или, для обычных непривилегированных ролей, в организации (`organization_members`) с учётом участия организации в операции (`search_organizations`). `REGIONAL_MANAGER` получает доступ только при прямом членстве в поиске; членства в организации недостаточно.
 
-Это соответствует уже работающей серверной логике (`canAccessSearch`, `requireSearchAccess`, `requireSearchManagement` в `server/src/http.ts`). Роли определяют объём допустимых действий, членство определяет, к каким операциям эти действия применимы.
+Это соответствует серверной логике (`canAccessSearch`, `requireSearchAccess`, `requireSearchManagement` в `server/src/http.ts`). Роли определяют объём допустимых действий, членство определяет, к каким операциям эти действия применимы.
 
 ### 4. Состав клиентов
 

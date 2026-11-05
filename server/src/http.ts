@@ -43,9 +43,14 @@ async function searchExists(searchId: string, client?: PoolClient) {
 
 async function canAccessSearch(user: User, searchId: string, client?: PoolClient): Promise<boolean> {
   if (privilegedRoles.includes(user.role)) return true;
-  const query = `SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2
-     UNION SELECT 1 FROM search_organizations so JOIN organization_members om ON om.organization_id=so.organization_id
-     WHERE so.search_id=$1 AND om.user_id=$2 AND om.active=true LIMIT 1`;
+  const directMembership = 'SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2';
+  // Regional managers receive access only when explicitly assigned to a search.
+  // Organization membership is not a substitute for a search-level grant.
+  const query = user.role === 'REGIONAL_MANAGER'
+    ? `${directMembership} LIMIT 1`
+    : `${directMembership}
+       UNION SELECT 1 FROM search_organizations so JOIN organization_members om ON om.organization_id=so.organization_id
+       WHERE so.search_id=$1 AND om.user_id=$2 AND om.active=true LIMIT 1`;
   const values = [searchId, user.id];
   const r = client ? await client.query(query, values) : await pool.query(query, values);
   return Boolean(r.rowCount);

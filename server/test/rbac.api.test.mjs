@@ -435,11 +435,29 @@ test('Search isolation: a viewer receives 404 for an existing search outside the
   assert.equal(r.status, 404);
 });
 
-test('REGIONAL_MANAGER can manage explicitly assigned searches but has no global search or audit access', async () => {
+test('REGIONAL_MANAGER access requires direct search membership, not organization membership', async () => {
   const assignedSearchId = await createSearch(tokens.leader);
+  const organizationOnlySearchId = await createSearch(tokens.leader);
   const unassignedSearchId = await createSearch(tokens.leader);
   const assigned = await addMember(assignedSearchId, users.regionalManager.id);
   assert.equal(assigned.status, 200);
+
+  const suffix = randomUUID();
+  const organization = await queryTestDatabase(
+    'INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id',
+    [`Regional access test ${suffix}`, `regional-access-${suffix}`],
+  );
+  const organizationId = organization.rows[0].id;
+  for (const userId of [users.regionalManager.id, users.coordinator.id]) {
+    await queryTestDatabase(
+      'INSERT INTO organization_members(organization_id,user_id,role,active) VALUES($1,$2,$3,true)',
+      [organizationId, userId, 'MEMBER'],
+    );
+  }
+  await queryTestDatabase(
+    'INSERT INTO search_organizations(search_id,organization_id) VALUES($1,$2)',
+    [organizationOnlySearchId, organizationId],
+  );
 
   const visibleSearches = await fetch(`${base}/api/v1/searches`, {
     headers: { Authorization: `Bearer ${tokens.regionalManager}` },
@@ -447,27 +465,54 @@ test('REGIONAL_MANAGER can manage explicitly assigned searches but has no global
   assert.equal(visibleSearches.status, 200);
   const visible = await visibleSearches.json();
   assert.ok(visible.some((search) => search.id === assignedSearchId));
+  assert.ok(!visible.some((search) => search.id === organizationOnlySearchId));
   assert.ok(!visible.some((search) => search.id === unassignedSearchId));
 
   const assignedRead = await fetch(`${base}/api/v1/searches/${assignedSearchId}`, {
     headers: { Authorization: `Bearer ${tokens.regionalManager}` },
   });
-  const unassignedRead = await fetch(`${base}/api/v1/searches/${unassignedSearchId}`, {
+  const organizationOnlyRead = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}`, {
     headers: { Authorization: `Bearer ${tokens.regionalManager}` },
   });
-  const unassignedAudit = await fetch(`${base}/api/v1/searches/${unassignedSearchId}/events`, {
+  const organizationOnlyAudit = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/events`, {
     headers: { Authorization: `Bearer ${tokens.regionalManager}` },
   });
   assert.equal(assignedRead.status, 200);
-  assert.equal(unassignedRead.status, 404);
-  assert.equal(unassignedAudit.status, 404);
+  assert.equal(organizationOnlyRead.status, 404);
+  assert.equal(organizationOnlyAudit.status, 404);
+
+  const organizationMemberRead = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}`, {
+    headers: { Authorization: `Bearer ${tokens.coordinator}` },
+  });
+  assert.equal(organizationMemberRead.status, 200, 'Other roles retain active-organization search access');
 
   const note = await fetch(`${base}/api/v1/searches/${assignedSearchId}/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ note: 'Regional manager scoped note' }),
+    body: JSON.stringify({ note: 'Regional manager direct-membership note' }),
   });
   assert.equal(note.status, 200);
+
+  const deniedNote = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
+    body: JSON.stringify({ note: 'Organization membership alone is insufficient' }),
+  });
+  assert.equal(deniedNote.status, 404);
+
+  const organizationOnlyTask = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+    body: JSON.stringify({ title: 'Task hidden from organization-only regional manager' }),
+  });
+  assert.equal(organizationOnlyTask.status, 200);
+  const task = await organizationOnlyTask.json();
+  const deniedTaskUpdate = await fetch(`${base}/api/v1/tasks/${task.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
+    body: JSON.stringify({ status: 'IN_PROGRESS' }),
+  });
+  assert.equal(deniedTaskUpdate.status, 404);
 
   const createSearchDenied = await fetch(`${base}/api/v1/searches`, {
     method: 'POST',

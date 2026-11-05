@@ -4,7 +4,7 @@ This document records what is implemented in the current stabilization branch. I
 
 ## Implemented in this branch
 
-- Server-side search access is scoped to privileged roles, search membership, or active organization membership.
+- Server-side search access is scoped to privileged roles and membership; `REGIONAL_MANAGER` requires explicit direct search membership, while other non-privileged roles may also use active organization membership.
 - Search creation automatically adds the creator to `search_members`.
 - Task reads require search access.
 - Task updates require search access; searchers may update only tasks assigned to themselves and cannot reassign or reprioritize them.
@@ -22,7 +22,7 @@ This document records what is implemented in the current stabilization branch. I
 - A second migration run is expected to be a no-op.
 - The runtime Docker image contains the SQL migrations and runs the migration runner before starting the server.
 - The committed seed backup artifact has been removed.
-- `REGIONAL_MANAGER` can be assigned through the existing one-time invitation or administrator role-update flow. The server treats it as a search-management role only after the normal direct-search or active-organization access check; it is not privileged, cannot create searches or administer global users/invitations, and has no all-project audit bypass.
+- `REGIONAL_MANAGER` can be assigned through the existing one-time invitation or administrator role-update flow. The server treats it as a search-management role only for searches where it has explicit direct membership; organization membership alone does not grant access. The role is not privileged, cannot create searches or administer global users/invitations, and has no all-project audit bypass.
 - Desktop role controls are aligned with the server role hierarchy, display the regional-manager role, and keep user administration controls disabled for non-administrator managers.
 - Desktop defaults to the normal Compose API port `18080`.
 - Desktop Tauri CSP is no longer disabled globally.
@@ -34,7 +34,7 @@ This document records what is implemented in the current stabilization branch. I
 ## Known limitations
 
 - Organization roles are a foundation; full permission objects and resource-level policy tables are not yet implemented.
-- Admin-created, one-time invitation tokens and manager-only membership grants are implemented. Regional-manager accounts can be onboarded by invitation but receive no search access until granted through the existing direct-search or active-organization membership model; a structured region assignment model and membership-management UI are not yet implemented. The Tauri/React desktop client has temporary create/revoke and acceptance screens; email/SMS delivery, mobile onboarding screens, and request/approval workflow remain pending. The Go/C prototype is not connected to the server. Self-join is blocked.
+- Admin-created, one-time invitation tokens and manager-only membership grants are implemented. Regional-manager accounts can be onboarded by invitation but receive no search access until explicitly added to each search; organization membership alone grants no regional-manager access. A structured region assignment model is not implemented; the desktop search view provides per-search membership controls that call the server-authorized add/remove endpoints. The Tauri/React desktop client has temporary create/revoke and acceptance screens; email/SMS delivery, mobile onboarding screens, and request/approval workflow remain pending. The Go/C prototype is not connected to the server. Self-join is blocked.
 - WebSocket currently authenticates and supports ping/pong, but the realtime event fan-out layer is not implemented.
 - Offline sync conflict resolution is represented in the schema but not yet implemented end-to-end.
 - Field GPS and mobile functionality require the future Flutter client.

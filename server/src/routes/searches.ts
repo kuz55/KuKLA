@@ -23,13 +23,13 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
          FROM searches s LEFT JOIN users u ON u.id=s.created_by
          WHERE EXISTS (
            SELECT 1 FROM search_members sm WHERE sm.search_id=s.id AND sm.user_id=$1
-         ) OR EXISTS (
+         ) OR ($2::boolean AND EXISTS (
            SELECT 1 FROM search_organizations so
            JOIN organization_members om ON om.organization_id=so.organization_id
            WHERE so.search_id=s.id AND om.user_id=$1 AND om.active=true
-         )
+         ))
          ORDER BY s.created_at DESC`;
-    return (await pool.query(query, privileged ? [] : [req.user.id])).rows;
+    return (await pool.query(query, privileged ? [] : [req.user.id, req.user.role !== 'REGIONAL_MANAGER'])).rows;
   });
 
   app.get('/api/v1/searches/:id', { preHandler: auth }, async (req) => {
