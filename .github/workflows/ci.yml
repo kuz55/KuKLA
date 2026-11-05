@@ -167,7 +167,7 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: |
-          base64 -w 3500 src-tauri/Cargo.lock | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
+          gzip -9 -c src-tauri/Cargo.lock | base64 -w 3800 | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
       - name: Build native Tauri bundle
         shell: bash
         run: |
@@ -181,11 +181,10 @@ jobs:
             if [ -f "$logfile" ]; then
               echo "## $logfile" >> "$GITHUB_STEP_SUMMARY"
               tail -n 150 "$logfile" >> "$GITHUB_STEP_SUMMARY"
-              matches=$(grep -iE 'error(\[[A-Z0-9]+\])?:|failed|could not|cannot|not found|undefined reference|panicked' "$logfile" | tail -n 20 || true)
-              if [ -n "$matches" ]; then
-                while IFS= read -r line; do
-                  echo "::error title=Native build error::$line"
-                done <<< "$matches"
+              context=$(grep -iE -B 6 -A 6 'error(\[[A-Z0-9]+\])?:|proc macro panicked|caused by|help: message|could not compile|failed to run|cannot find|not found|undefined reference' "$logfile" | tail -n 20 || true)
+              if [ -n "$context" ]; then
+                escaped=$(printf '%s' "$context" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')
+                echo "::error title=Native build context::$escaped"
               else
                 tail -n 6 "$logfile" | while IFS= read -r line; do
                   echo "::error title=Native build output::$line"
