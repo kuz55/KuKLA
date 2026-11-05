@@ -157,20 +157,6 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> desktop/src-tauri/target
       - run: npm ci
-      - name: Build frontend for native Rust check
-        if: runner.os == 'Linux'
-        run: npm run build
-      - name: Check native Rust dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo check --manifest-path src-tauri/Cargo.toml 2>&1 | tee rust-check.log
-      - name: Export resolved Cargo.lock for bootstrap
-        if: always() && runner.os == 'Linux'
-        shell: bash
-        run: |
-          xz -9 -c src-tauri/Cargo.lock | base64 -w 3800 | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
       - name: Build native Tauri bundle
         shell: bash
         run: |
@@ -180,7 +166,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          for logfile in rust-check.log tauri-build.log; do
+          for logfile in tauri-build.log; do
             if [ -f "$logfile" ]; then
               echo "## $logfile" >> "$GITHUB_STEP_SUMMARY"
               tail -n 150 "$logfile" >> "$GITHUB_STEP_SUMMARY"

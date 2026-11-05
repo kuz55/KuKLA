@@ -28,7 +28,7 @@ This document records what is implemented in the current stabilization branch. I
 - Subject-panel component tests cover search scoping, create/update requests, validation, fail-closed online-only errors, and the absence of photo/delete controls; API tests verify photo URLs are not accepted or stored and hard deletion is not exposed. No offline cache or queue is introduced.
 - RBAC policy has dedicated unit-test coverage. Administrative user changes re-check and lock the actor and target in a transaction; the change and its audit event commit atomically.
 - GitHub Actions validates server build, migrations, tests, desktop build/check, and native Tauri Linux DEB and Windows MSI bundles. macOS native builds are not configured yet.
-- Native Tauri session-token storage now uses Windows Credential Manager or Linux Secret Service rather than WebView storage; legacy-token migration and failure behavior have desktop unit coverage. The Rust dependency lockfile and Windows/Linux native builds still require CI verification.
+- Native Tauri session-token storage now uses Windows Credential Manager or Linux Secret Service rather than WebView storage; legacy-token migration and failure behavior have desktop unit coverage. The resolved Rust dependency lockfile and Linux DEB/Windows MSI bundle builds are verified in CI; runtime smoke tests against the actual OS credential stores remain pending.
 
 ## Known limitations
 

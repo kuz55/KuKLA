@@ -76,7 +76,7 @@ This roadmap converts the product requirements and gap analysis into executable 
 - [ ] Complete automated unit/integration/API tests.
 - [ ] Migration verification in CI.
 - [x] Verify native Tauri bundle CI for Windows MSI and Linux DEB.
-- [ ] Verify native session-token storage through Windows Credential Manager and Linux Secret Service, including no plaintext fallback and unavailable-store behavior.
+- [ ] Run platform runtime smoke tests for native session-token storage through Windows Credential Manager and Linux Secret Service, including no plaintext fallback and unavailable-store behavior; CI bundle builds and desktop unit tests are not a substitute for exercising the actual OS stores.
 - [ ] Mobile build checks, release signing, and macOS native packaging (planned for a later increment).
 - [ ] Security scanning.
 - [ ] Backup and restore drills.
