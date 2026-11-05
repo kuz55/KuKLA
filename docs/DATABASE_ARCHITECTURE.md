@@ -131,9 +131,15 @@ SUPERUSER
 ADMIN
 LEADER
 COORDINATOR
+REGIONAL_MANAGER
 SEARCHER
 VIEWER
 ```
+
+`REGIONAL_MANAGER` — приглашаемая search-management роль без глобального
+bypass: доступ определяется обычной проверкой членства в поиске или активного
+членства в организации. Структурированной модели регионов и global-аудита этой
+роли пока нет.
 
 Пароли не должны храниться в открытом виде.
 

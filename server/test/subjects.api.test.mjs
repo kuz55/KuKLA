@@ -34,6 +34,7 @@ const makeUser = async (role, email, password) => ({
 const users = {
   leader: await makeUser('LEADER', `subject-leader-${timestamp}@test.local`, 'subject-leader-pass-123456'),
   otherLeader: await makeUser('LEADER', `subject-other-${timestamp}@test.local`, 'subject-other-pass-123456'),
+  regionalManager: await makeUser('REGIONAL_MANAGER', `subject-regional-${timestamp}@test.local`, 'subject-regional-pass-123456'),
   searcher: await makeUser('SEARCHER', `subject-searcher-${timestamp}@test.local`, 'subject-searcher-pass-123456'),
   viewer: await makeUser('VIEWER', `subject-viewer-${timestamp}@test.local`, 'subject-viewer-pass-123456'),
   outsider: await makeUser('SEARCHER', `subject-outsider-${timestamp}@test.local`, 'subject-outsider-pass-123456'),
@@ -49,7 +50,7 @@ const createSearch = async (token, title) => {
 
 const searchId = await createSearch(tokens.leader, `Subject API Search ${timestamp}`);
 const otherSearchId = await createSearch(tokens.otherLeader, `Other Subject Search ${timestamp}`);
-for (const key of ['searcher', 'viewer']) {
+for (const key of ['searcher', 'viewer', 'regionalManager']) {
   const response = await request(tokens.leader, `/searches/${searchId}/members`, 'POST', { userId: users[key].id });
   assert.equal(response.status, 200);
 }
@@ -76,6 +77,10 @@ test('subject profiles are visible only to authorized search managers', async ()
   assert.equal(managerRead.status, 200);
   assert.deepEqual(await managerRead.json(), []);
 
+  const regionalManagerRead = await request(tokens.regionalManager, `/searches/${searchId}/subjects`);
+  assert.equal(regionalManagerRead.status, 200);
+  assert.deepEqual(await regionalManagerRead.json(), []);
+
   const searcherRead = await request(tokens.searcher, `/searches/${searchId}/subjects`);
   const viewerRead = await request(tokens.viewer, `/searches/${searchId}/subjects`);
   assert.equal(searcherRead.status, 403);
@@ -83,7 +88,7 @@ test('subject profiles are visible only to authorized search managers', async ()
 
   const foreignRead = await request(tokens.outsider, `/searches/${searchId}/subjects`);
   const unknownRead = await request(tokens.outsider, `/searches/${randomUUID()}/subjects`);
-  const managerWithoutAccess = await request(tokens.otherLeader, `/searches/${searchId}/subjects`);
+  const managerWithoutAccess = await request(tokens.regionalManager, `/searches/${otherSearchId}/subjects`);
   assert.equal(foreignRead.status, 404);
   assert.equal(unknownRead.status, 404);
   assert.equal(managerWithoutAccess.status, 404, 'A management role alone does not grant access to another search');
@@ -126,8 +131,12 @@ test('manager can create a validated subject profile with a non-PII audit record
   assert.deepEqual(audit.rows[0].payload, { subjectId }, 'Audit payload must not duplicate sensitive profile fields');
 
   const managerEvents = await request(tokens.leader, `/searches/${searchId}/events`);
+  const regionalManagerEvents = await request(tokens.regionalManager, `/searches/${searchId}/events`);
   const memberEvents = await request(tokens.searcher, `/searches/${searchId}/events`);
   assert.ok((await managerEvents.json()).some((event) => event.type === 'SUBJECT_CREATED'));
+  const regionalSubjects = await request(tokens.regionalManager, `/searches/${searchId}/subjects`);
+  assert.ok((await regionalSubjects.json()).some((record) => record.id === subjectId));
+  assert.ok((await regionalManagerEvents.json()).some((event) => event.type === 'SUBJECT_CREATED'));
   assert.ok(!(await memberEvents.json()).some((event) => event.type === 'SUBJECT_CREATED'), 'Subject audit metadata is manager-only too');
   const [managerSnapshot, memberSnapshot] = await Promise.all([
     request(tokens.leader, `/searches/${searchId}/snapshot`),

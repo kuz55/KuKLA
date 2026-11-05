@@ -8,7 +8,8 @@
 
 - A staging/test server with the current migrations and Tauri desktop build.
 - A manager account with access to one test search.
-- A second manager without access to that search, plus a `SEARCHER` and `VIEWER` who are members of it.
+- A `REGIONAL_MANAGER` explicitly assigned to one test search and not assigned to an unrelated search.
+- A second manager without access to the test search, plus a `SEARCHER` and `VIEWER` who are members of it.
 - An unrelated search with its own test subject profile.
 - Synthetic values only; no photos or real medical details.
 
@@ -25,10 +26,11 @@
 ## Authorization and audit checks
 
 1. As a `SEARCHER` and as a `VIEWER` who belong to the search, try to list, create, and update a profile. Each operation must be denied by the server.
-2. As the unrelated manager, request the profile list for the test search. The response must not reveal whether an inaccessible search exists.
-3. Inspect the event log and snapshot as a manager: subject events may include the subject ID and updated field names, but never profile values.
-4. Inspect the event log and snapshot as a non-manager member: subject events must be absent.
-5. Attempt the documented API surface for photo upload and hard deletion. Neither capability is exposed; the existing `photo_url` column must remain untouched by this slice.
+2. As the assigned `REGIONAL_MANAGER`, confirm the profile list and manager-only subject audit events are visible only in the explicitly assigned search.
+3. As the unrelated manager and as the unassigned regional manager, request the profile list for the test search. The response must not reveal whether an inaccessible search exists.
+4. Inspect the event log and snapshot as a manager: subject events may include the subject ID and updated field names, but never profile values.
+5. Inspect the event log and snapshot as a non-manager member: subject events must be absent.
+6. Attempt the documented API surface for photo upload and hard deletion. Neither capability is exposed; the existing `photo_url` column must remain untouched by this slice.
 
 ## Online-only failure checks
 

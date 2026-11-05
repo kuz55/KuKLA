@@ -11,7 +11,7 @@ Legend:
 | Capability | Current state | Next implementation |
 |---|---|---|
 | Authentication | PARTIAL | harden secrets, sessions, rate limits, lifecycle |
-| RBAC | PARTIAL | resource-level authorization and organization scope |
+| RBAC | PARTIAL | invite-only `REGIONAL_MANAGER` exists with direct-search/active-organization membership scope; structured region assignment, global audit scope review, and broader resource-level authorization remain open |
 | Search lifecycle | DONE | formal incident model and transitions |
 | Subject profile | PARTIAL | management-only API/desktop slice exists with component tests for list/create/update and online-only failure states; finish workflow acceptance, privacy/retention decisions, production audit verification and the degraded-network contract before marking complete |
 | Organizations | MISSING | organization and membership model |
@@ -43,7 +43,7 @@ Legend:
 
 ## Subject-profile completion gate
 
-The current slice provides search-manager-only subject list/create/update operations in the desktop search command view. API authorization and audit rollback are covered by local integration tests, but the roadmap item remains **PARTIAL**. Do not mark it complete until the end-to-end workflow and field acceptance scenario are reviewed, privacy/retention and deletion rules are approved, PostgreSQL/production audit and retention behavior is verified, adequate desktop and authorization test coverage is in place, and offline/degraded-network behavior has an explicit and tested decision. The slice intentionally excludes field/mobile access, photo upload, hard deletion, and offline use until those decisions exist; it is not operational rescue-coordination readiness.
+The current slice provides search-manager-only subject list/create/update operations in the desktop search command view. `REGIONAL_MANAGER` is included only after the normal direct-search or active-organization membership check; the role has no global audit bypass. API authorization and audit rollback are covered by local integration tests, but the roadmap item remains **PARTIAL**. Do not mark it complete until the end-to-end workflow and field acceptance scenario are reviewed, privacy/retention and deletion rules are approved, PostgreSQL/production audit and retention behavior is verified, adequate desktop and authorization test coverage is in place, and offline/degraded-network behavior has an explicit and tested decision. The slice intentionally excludes field/mobile access, photo upload, hard deletion, and offline use until those decisions exist; it is not operational rescue-coordination readiness.
 
 ## Implementation order
 

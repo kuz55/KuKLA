@@ -46,6 +46,7 @@ const users = {
   admin: { email: `admin-${timestamp}@test.local`, password: 'admin-pass-123456', role: 'ADMIN' },
   leader: { email: `leader-${timestamp}@test.local`, password: 'leader-pass-123456', role: 'LEADER' },
   coordinator: { email: `coord-${timestamp}@test.local`, password: 'coord-pass-123456', role: 'COORDINATOR' },
+  regionalManager: { email: `regional-manager-${timestamp}@test.local`, password: 'regional-pass-123456', role: 'REGIONAL_MANAGER' },
   searcher: { email: `searcher-${timestamp}@test.local`, password: 'searcher-pass-123456', role: 'SEARCHER' },
   viewer: { email: `viewer-${timestamp}@test.local`, password: 'viewer-pass-123456', role: 'VIEWER' },
 };
@@ -145,6 +146,12 @@ test('GET /users: COORDINATOR returns 200 (filtered list)', async () => {
   assert.equal(r.status, 200);
 });
 
+test('GET /users: REGIONAL_MANAGER returns 200 (filtered list, not a global directory)', async () => {
+  const r = await fetch(`${base}/api/v1/users`, { headers: { Authorization: `Bearer ${tokens.regionalManager}` } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), []);
+});
+
 test('GET /users: SEARCHER returns 403', async () => {
   const r = await fetch(`${base}/api/v1/users`, { headers: { Authorization: `Bearer ${tokens.searcher}` } });
   assert.equal(r.status, 403);
@@ -169,6 +176,24 @@ test('PATCH /users: ADMIN can change LEADER role to COORDINATOR', async () => {
   assert.equal(r.status, 200);
   const data = await r.json();
   assert.equal(data.role, 'COORDINATOR');
+});
+
+test('PATCH /users: ADMIN may assign REGIONAL_MANAGER, but that role cannot administer users', async () => {
+  const targetId = await createTestUser('SEARCHER', `regional-target-${Date.now()}@test.local`);
+  const assigned = await fetch(`${base}/api/v1/users/${targetId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
+    body: JSON.stringify({ role: 'REGIONAL_MANAGER' }),
+  });
+  assert.equal(assigned.status, 200);
+  assert.equal((await assigned.json()).role, 'REGIONAL_MANAGER');
+
+  const denied = await fetch(`${base}/api/v1/users/${users.searcher.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
+    body: JSON.stringify({ role: 'COORDINATOR' }),
+  });
+  assert.equal(denied.status, 403);
 });
 
 test('PATCH /users: user change rolls back if its audit insert fails', async () => {
@@ -408,6 +433,48 @@ test('Search isolation: a viewer receives 404 for an existing search outside the
     headers: { Authorization: `Bearer ${tokens.viewer}` },
   });
   assert.equal(r.status, 404);
+});
+
+test('REGIONAL_MANAGER can manage explicitly assigned searches but has no global search or audit access', async () => {
+  const assignedSearchId = await createSearch(tokens.leader);
+  const unassignedSearchId = await createSearch(tokens.leader);
+  const assigned = await addMember(assignedSearchId, users.regionalManager.id);
+  assert.equal(assigned.status, 200);
+
+  const visibleSearches = await fetch(`${base}/api/v1/searches`, {
+    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
+  });
+  assert.equal(visibleSearches.status, 200);
+  const visible = await visibleSearches.json();
+  assert.ok(visible.some((search) => search.id === assignedSearchId));
+  assert.ok(!visible.some((search) => search.id === unassignedSearchId));
+
+  const assignedRead = await fetch(`${base}/api/v1/searches/${assignedSearchId}`, {
+    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
+  });
+  const unassignedRead = await fetch(`${base}/api/v1/searches/${unassignedSearchId}`, {
+    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
+  });
+  const unassignedAudit = await fetch(`${base}/api/v1/searches/${unassignedSearchId}/events`, {
+    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
+  });
+  assert.equal(assignedRead.status, 200);
+  assert.equal(unassignedRead.status, 404);
+  assert.equal(unassignedAudit.status, 404);
+
+  const note = await fetch(`${base}/api/v1/searches/${assignedSearchId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
+    body: JSON.stringify({ note: 'Regional manager scoped note' }),
+  });
+  assert.equal(note.status, 200);
+
+  const createSearchDenied = await fetch(`${base}/api/v1/searches`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
+    body: JSON.stringify({ title: `Unscoped Regional Search ${Date.now()}` }),
+  });
+  assert.equal(createSearchDenied.status, 403);
 });
 
 test('Search membership: unshared ids are hidden and only an authorized manager may add members', async () => {

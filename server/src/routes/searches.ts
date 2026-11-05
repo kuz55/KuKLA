@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
-import { managementRoles, privilegedRoles } from '../rbac.js';
+import { privilegedRoles, searchCreationRoles } from '../rbac.js';
 import { pool } from '../config.js';
 import { auth, commitSearchMutation, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
 import { Params } from '../types.js';
@@ -46,7 +46,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
     return result.rows[0];
   });
 
-  app.post('/api/v1/searches', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.post('/api/v1/searches', { preHandler: roles(...searchCreationRoles) }, async (req) => {
     const body = z.object({
       title: z.string().min(2),
       area: z.string().optional(),

@@ -10,7 +10,8 @@ This roadmap converts the product requirements and gap analysis into executable 
   - [x] Prepare a synthetic-data manager workflow acceptance script (`docs/acceptance/subject-manager-workflow.md`).
   - [ ] Review and sign off the complete manager workflow and field acceptance scenario.
   - [ ] Have the responsible data owner and counsel approve the legal basis/notice, validate the product proposal of 3 years from profile creation, and approve deletion/anonymization rules; a software-only release may use synthetic data, but do not use real data before approval. Track decisions in the [policy proposal](acceptance/subject-data-policy-proposal.md) and [release approval checklist](acceptance/release-approval-checklist.ru.md).
-  - [ ] Implement the regional-manager role and controlled invitation flow; define its project/region scope before granting deletion-policy or audit responsibilities.
+  - [x] Add the invite-only `REGIONAL_MANAGER` role and server-enforced scoped permissions. The role can manage only searches allowed by the existing direct-search/active-organization membership checks; it cannot create searches, administer users/invitations, or bypass search access.
+  - [ ] Define a structured region/project assignment model and review the requested global audit scope before granting cross-project audit or deletion-policy responsibilities; the current role does not confer these powers.
   - [x] Add desktop component tests for search-scoped list/create/update, validation, and online-only failure states; add API regression tests rejecting stored photo URLs and hard deletion.
   - [ ] Verify audit and retention behavior against PostgreSQL/production configuration; define separate audit-log retention and review responsibilities, then expand authorization and end-to-end tests.
   - [ ] Define the online-only degraded-network contract and test it before field use; no offline cache or command queue is in scope.

@@ -5,12 +5,20 @@ export type Role =
   | 'ADMIN'
   | 'LEADER'
   | 'COORDINATOR'
+  | 'REGIONAL_MANAGER'
   | 'SEARCHER'
   | 'VIEWER';
 
 export const privilegedRoles: Role[] = ['SYSTEM_OWNER', 'SUPERADMIN', 'SUPERUSER'];
 export const adminRoles: Role[] = [...privilegedRoles, 'ADMIN'];
-export const managementRoles: Role[] = [...adminRoles, 'LEADER', 'COORDINATOR'];
+// Regional managers receive management powers only inside searches allowed by
+// the normal search-access check (direct membership or active organization
+// membership). Keep this role out of privilegedRoles: global access is not safe
+// without a reviewed region/assignment model.
+export const managementRoles: Role[] = [...adminRoles, 'LEADER', 'COORDINATOR', 'REGIONAL_MANAGER'];
+// Creating a search is global in the current data model; do not grant it to a
+// regional manager until searches can be constrained to an assigned region.
+export const searchCreationRoles: Role[] = [...adminRoles, 'LEADER', 'COORDINATOR'];
 
 export function canManageUser(actor: Role, target: Role): boolean {
   if (actor === 'SYSTEM_OWNER') return true;
