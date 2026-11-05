@@ -157,6 +157,9 @@ jobs:
         with:
           workspaces: desktop/src-tauri -> desktop/src-tauri/target
       - run: npm ci
+      - name: Build frontend for native Rust check
+        if: runner.os == 'Linux'
+        run: npm run build
       - name: Check native Rust dependencies
         if: runner.os == 'Linux'
         shell: bash
@@ -167,7 +170,7 @@ jobs:
         if: always() && runner.os == 'Linux'
         shell: bash
         run: |
-          gzip -9 -c src-tauri/Cargo.lock | base64 -w 3800 | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
+          xz -9 -c src-tauri/Cargo.lock | base64 -w 3800 | awk '{ printf "::notice title=lock-%03d::%s\n", NR, $0 }'
       - name: Build native Tauri bundle
         shell: bash
         run: |
