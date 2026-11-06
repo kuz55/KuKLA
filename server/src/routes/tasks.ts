@@ -95,13 +95,16 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
                SELECT 1 FROM search_members sm
                WHERE sm.search_id=t.search_id AND sm.user_id=$3
              )
-             OR EXISTS (
-               SELECT 1 FROM search_organizations so
-               JOIN organization_members om ON om.organization_id=so.organization_id
-               WHERE so.search_id=t.search_id AND om.user_id=$3 AND om.active=true
+             OR (
+               $4::boolean
+               AND EXISTS (
+                 SELECT 1 FROM search_organizations so
+                 JOIN organization_members om ON om.organization_id=so.organization_id
+                 WHERE so.search_id=t.search_id AND om.user_id=$3 AND om.active=true
+               )
              )
            )`,
-        [id, privilegedRoles.includes(req.user.role), req.user.id],
+        [id, privilegedRoles.includes(req.user.role), req.user.id, req.user.role !== 'REGIONAL_MANAGER'],
       );
       if (!visible.rowCount) throw httpErrors.notFound('Task not found');
       const searchId = visible.rows[0].search_id as string;

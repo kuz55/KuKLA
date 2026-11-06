@@ -78,6 +78,7 @@ export default function SubjectPanel({ searchId }: { searchId: string }) {
     try {
       setSubjects(await api<Subject[]>(`/searches/${encodeURIComponent(searchId)}/subjects`));
     } catch (cause) {
+      setSubjects([]);
       setError(cause instanceof Error ? cause.message : 'Не удалось загрузить профиль');
     } finally {
       setLoading(false);

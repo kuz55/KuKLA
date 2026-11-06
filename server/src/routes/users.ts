@@ -6,7 +6,7 @@ import { adminRoles, managementRoles, privilegedRoles, Role, canManageUser, canA
 import { pool } from '../config.js';
 import { parseId, roles } from '../http.js';
 
-const invitationRole = z.enum(['SUPERADMIN', 'SUPERUSER', 'ADMIN', 'LEADER', 'COORDINATOR', 'SEARCHER', 'VIEWER']);
+const invitationRole = z.enum(['SUPERADMIN', 'SUPERUSER', 'ADMIN', 'LEADER', 'COORDINATOR', 'REGIONAL_MANAGER', 'SEARCHER', 'VIEWER']);
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 const userRoutes: FastifyPluginAsync = async (app) => {
@@ -137,7 +137,7 @@ const userRoutes: FastifyPluginAsync = async (app) => {
     const id = parseId(req);
     const body = z.object({
       name: z.string().trim().min(2).max(120).optional(),
-      role: z.enum(['SYSTEM_OWNER', 'SUPERADMIN', 'SUPERUSER', 'ADMIN', 'LEADER', 'COORDINATOR', 'SEARCHER', 'VIEWER']).optional(),
+      role: z.enum(['SYSTEM_OWNER', 'SUPERADMIN', 'SUPERUSER', 'ADMIN', 'LEADER', 'COORDINATOR', 'REGIONAL_MANAGER', 'SEARCHER', 'VIEWER']).optional(),
       active: z.boolean().optional(),
       phone: z.string().trim().optional(),
     }).refine((value) => Object.keys(value).length > 0, { message: 'Nothing to update' }).parse(req.body);

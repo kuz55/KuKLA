@@ -46,6 +46,22 @@ test('register creates user with role SEARCHER', async () => {
   assert.equal(data.active, true);
 });
 
+test('public registration cannot self-assign the REGIONAL_MANAGER role', async () => {
+  const email = `self-assign-${Date.now()}@kukla.local`;
+  const response = await fetch(`${base}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: `QA ${email}`,
+      email,
+      password: 'qa-test-pass-123456',
+      role: 'REGIONAL_MANAGER',
+    }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).role, 'SEARCHER');
+});
+
 test('login with valid credentials returns token', async () => {
   const email = `login-${Date.now()}@kukla.local`;
   const password = 'valid-pass-123456';

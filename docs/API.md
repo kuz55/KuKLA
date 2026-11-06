@@ -2,10 +2,10 @@
 
 Base URL: `/api/v1`.
 
-- **Auth:** `POST /auth/login`, `POST /auth/register` (development/explicit opt-in only), `POST /auth/accept-invitation`, `POST /auth/logout`, `GET /me`. Open registration stays disabled by default; the server must explicitly enable it, and the legacy desktop UI also requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` when built.
+- **Auth:** `POST /auth/login`, `POST /auth/register` (development/explicit opt-in only), `POST /auth/accept-invitation`, `POST /auth/logout`, `GET /me`. Open registration stays disabled by default; the server must explicitly enable it, and the Tauri desktop UI also requires `VITE_ALLOW_PUBLIC_REGISTRATION=true` when built.
 - **Users:** `GET /users`, `PATCH /users/:id`.
 - **Invitations:** admin-only `POST /users/invitations` creates an invitation and returns a one-time token; `GET /users/invitations` lists metadata only; `DELETE /users/invitations/:id` revokes a pending invitation. Deliver the returned token to the invitee through a trusted channel. Tokens expire after 24 hours.
-- **Searches:** `GET/POST /searches`, `GET/PATCH /searches/:id`.
+- **Searches:** `GET/POST /searches`, `GET/PATCH /searches/:id`. Search creation is limited to privileged/system administrators, `ADMIN`, `LEADER`, and `COORDINATOR`; regional managers can manage only searches where they have explicit direct membership; organization membership alone is insufficient. Other non-privileged roles may also receive access through active organization membership.
 - **Members:** `GET /searches/:id/members`; manager-only `POST /searches/:id/members` with `{ "userId": "<uuid>" }`; manager-only `DELETE /searches/:id/members/:userId`.
 - **Subject profiles:** manager-only `GET/POST /searches/:id/subjects` and `PATCH /searches/:id/subjects/:subjectId`. These routes require both a management role and access to that search; non-manager members receive `403`, while users without search access receive the non-enumerating `404`. Create accepts optional `fullName`, `age`, `sex`, `description`, `clothing`, `medicalNotes`, `lastKnownLat`, `lastKnownLng`, and `lastKnownAt` fields; supply at least one detail, and provide both coordinates or neither. Patch accepts one or more of the same fields; `null` clears nullable fields. There is no delete endpoint. Sensitive fields are not copied into audit payloads, and subject audit events are hidden from non-manager event and snapshot readers. The existing `photo_url` database field is not exposed by this API.
 - **Tasks:** `GET/POST /searches/:id/tasks`, `PATCH /tasks/:id`.
@@ -31,7 +31,7 @@ Create an invitation by providing exactly one contact method:
 }
 ```
 
-Alternatively use an E.164 `phone` instead of `email`. Supported invitation roles are `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `SEARCHER` and `VIEWER`; the caller's role determines which of those it may assign. `SYSTEM_OWNER` is never assignable by invitation.
+Alternatively use an E.164 `phone` instead of `email`. Supported invitation roles are `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `REGIONAL_MANAGER`, `SEARCHER` and `VIEWER`; the caller's role determines which of those it may assign. `SYSTEM_OWNER` is never assignable by invitation. A regional manager is not a global administrator: management access requires explicit direct membership in each search; organization membership alone does not grant this role access. Other non-privileged roles retain the existing active-organization search-access path. Regional managers cannot create searches or manage global users/invitations. There is no structured region-assignment model yet, and the requested all-project audit access remains unimplemented pending security/privacy review. Public registration always creates a `SEARCHER` even if a client supplies a `role` field; an administrator may onboard a regional manager by invitation or promote an existing account through the protected role-management API.
 
 `POST /users/invitations` returns invitation metadata and a random `token` exactly once. The database stores only its SHA-256 hash. Do not put the token in logs or source control; deliver it to the intended person through a trusted channel. A pending invite expires in 24 hours. `GET /users/invitations` never returns the token or its hash. `DELETE /users/invitations/:id` revokes a pending invite.
 
@@ -46,7 +46,7 @@ The invitee accepts with:
 
 `POST /auth/accept-invitation` creates the account and a 12-hour session atomically. A token cannot be replayed, and an invite is rejected if its inviter is no longer active or authorized for the invited role.
 
-Direct self-join at `POST /searches/:id/join` is disabled. It returns `403`; an authorized manager must add an active user. A temporary invitation flow exists in the deprecated Tauri/React client; the target Go/C and mobile clients, plus email/SMS delivery, still need onboarding screens and delivery support.
+Direct self-join at `POST /searches/:id/join` is disabled. It returns `403`; an authorized manager must add an active user. A temporary invitation flow exists in the Tauri/React desktop client; mobile onboarding screens and email/SMS delivery are not implemented. The Go/C prototype is not connected to the server.
 
 ## Subject profile scope and limitations
 
