@@ -1,6 +1,6 @@
-# KuKLA Go/C desktop (first local workflow)
+# KuKLA Go/C + GTK4 prototype
 
-This directory is the parallel implementation of the approved local desktop architecture. Existing TypeScript/Rust/Flutter/PostgreSQL sources remain intact as reference material until feature parity and migration gates are passed.
+This directory contains an experimental local-only desktop prototype. It is not the target product client; the selected cross-platform desktop client is Tauri + React in `desktop/` (see [ADR-0002](../docs/adr/0002-tauri-cross-platform-desktop.md)). The prototype is retained for reference and has not been connected to the authoritative server API.
 
 ## Current scope
 

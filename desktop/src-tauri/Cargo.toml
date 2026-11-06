@@ -1,14 +1,24 @@
 [package]
-name="kukla-desktop"
-version="2.0.0"
-edition="2021"
+name = "kukla-desktop"
+version = "2.0.0"
+edition = "2021"
+
 [lib]
-name="kukla_desktop_lib"
-crate-type= ["staticlib", "cdylib", "rlib"]
+name = "kukla_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
-tauri-build= {version="2.0",features= [] }
+tauri-build = { version = "2.0", features = [] }
+
 [dependencies]
-tauri= {version="2.5",features= [] }
+tauri = { version = "2.5", features = [] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust", "vendored"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
 [features]
-default= ["custom-protocol"]
-custom-protocol= ["tauri/custom-protocol"]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,9 +1,9 @@
 import { FastifyPluginAsync } from 'fastify';
 import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
-import { managementRoles, privilegedRoles } from '../rbac.js';
+import { privilegedRoles, searchCreationRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { auth, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
+import { auth, commitSearchMutation, parseId, requireSearchAccess, requireSearchManagement, roles } from '../http.js';
 import { Params } from '../types.js';
 
 const searchRoutes: FastifyPluginAsync = async (app) => {
@@ -23,13 +23,13 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
          FROM searches s LEFT JOIN users u ON u.id=s.created_by
          WHERE EXISTS (
            SELECT 1 FROM search_members sm WHERE sm.search_id=s.id AND sm.user_id=$1
-         ) OR EXISTS (
+         ) OR ($2::boolean AND EXISTS (
            SELECT 1 FROM search_organizations so
            JOIN organization_members om ON om.organization_id=so.organization_id
            WHERE so.search_id=s.id AND om.user_id=$1 AND om.active=true
-         )
+         ))
          ORDER BY s.created_at DESC`;
-    return (await pool.query(query, privileged ? [] : [req.user.id])).rows;
+    return (await pool.query(query, privileged ? [] : [req.user.id, req.user.role !== 'REGIONAL_MANAGER'])).rows;
   });
 
   app.get('/api/v1/searches/:id', { preHandler: auth }, async (req) => {
@@ -46,7 +46,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
     return result.rows[0];
   });
 
-  app.post('/api/v1/searches', { preHandler: roles(...managementRoles) }, async (req) => {
+  app.post('/api/v1/searches', { preHandler: roles(...searchCreationRoles) }, async (req) => {
     const body = z.object({
       title: z.string().min(2),
       area: z.string().optional(),
@@ -84,19 +84,19 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/api/v1/searches/:id', { preHandler: auth }, async (req) => {
     const id = parseId(req);
-    await requireSearchManagement(req, id);
-    const body = z.object({
-      status: z.enum(['PLANNED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
-      title: z.string().min(2).optional(),
-      area: z.string().nullable().optional(),
-      description: z.string().nullable().optional(),
-      incident_lat: z.number().min(-90).max(90).nullable().optional(),
-      incident_lng: z.number().min(-180).max(180).nullable().optional(),
-    }).refine((value) => Object.keys(value).length > 0, { message: 'Nothing to update' }).parse(req.body);
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await requireSearchManagement(req, id, client);
+      const body = z.object({
+        status: z.enum(['PLANNED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']).optional(),
+        title: z.string().min(2).optional(),
+        area: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        incident_lat: z.number().min(-90).max(90).nullable().optional(),
+        incident_lng: z.number().min(-180).max(180).nullable().optional(),
+      }).refine((value) => Object.keys(value).length > 0, { message: 'Nothing to update' }).parse(req.body);
+
       const result = await client.query(
         `UPDATE searches SET
            title=CASE WHEN $1::boolean THEN $2 ELSE title END,
@@ -126,7 +126,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
         'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
         [id, req.user.id, 'SEARCH_UPDATED', { changes: body }],
       );
-      await client.query('COMMIT');
+      await commitSearchMutation(req, client);
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
@@ -157,12 +157,14 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/api/v1/searches/:id/members', { preHandler: auth }, async (req) => {
     const id = parseId(req);
-    await requireSearchManagement(req, id);
-    const body = z.object({ userId: z.string().uuid() }).parse(req.body);
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
+      const parsed = z.object({ userId: z.string().uuid() }).safeParse(req.body);
+      await requireSearchManagement(req, id, client, parsed.success ? [parsed.data.userId] : []);
+      if (!parsed.success) throw parsed.error;
+      const body = parsed.data;
       const target = await client.query('SELECT id FROM users WHERE id=$1 AND active=true FOR SHARE', [body.userId]);
       if (!target.rowCount) throw httpErrors.notFound('Active user not found');
       const added = await client.query(
@@ -175,7 +177,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
           [id, req.user.id, 'MEMBER_ADDED', { userId: body.userId }],
         );
       }
-      await client.query('COMMIT');
+      await commitSearchMutation(req, client);
       return { ok: true, added: Boolean(added.rowCount) };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -187,12 +189,12 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/api/v1/searches/:id/members/:userId', { preHandler: auth }, async (req) => {
     const id = parseId(req);
-    await requireSearchManagement(req, id);
-    const userId = z.string().uuid().parse((req.params as Params).userId);
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
+      await requireSearchManagement(req, id, client);
+      const userId = z.string().uuid().parse((req.params as Params).userId);
       const removed = await client.query(
         'DELETE FROM search_members WHERE search_id=$1 AND user_id=$2 RETURNING user_id',
         [id, userId],
@@ -203,7 +205,7 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
           [id, req.user.id, 'MEMBER_REMOVED', { userId }],
         );
       }
-      await client.query('COMMIT');
+      await commitSearchMutation(req, client);
       return { ok: true, removed: Boolean(removed.rowCount) };
     } catch (error) {
       await client.query('ROLLBACK');

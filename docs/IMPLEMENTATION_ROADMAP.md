@@ -6,7 +6,16 @@ This roadmap converts the product requirements and gap analysis into executable 
 
 - [x] Database foundation: subjects, operational periods, sectors, teams, assignments, clues, witnesses, resources, check-ins, notifications, sync operations.
 - [x] Organization/device/hazard/evidence/emergency/AI job schema foundation.
-- [ ] Subject API and command-center UI.
+- [ ] Subject API and command-center UI — **PARTIAL; do not mark complete yet.** The current scope is manager-only, search-scoped profile list/create/update in the desktop search view. PostgreSQL API tests cover authorization, audit privacy/rollback, and the desktop component tests cover search scoping, list/create/update, validation, and online-only failure states. Remaining gates:
+  - [x] Prepare a synthetic-data manager workflow acceptance script (`docs/acceptance/subject-manager-workflow.md`).
+  - [ ] Review and sign off the complete manager workflow and field acceptance scenario.
+  - [ ] Have the responsible data owner and counsel approve the legal basis/notice, validate the product proposal of 3 years from profile creation, and approve deletion/anonymization rules; a software-only release may use synthetic data, but do not use real data before approval. Track decisions in the [policy proposal](acceptance/subject-data-policy-proposal.md) and [release approval checklist](acceptance/release-approval-checklist.ru.md).
+  - [x] Add `REGIONAL_MANAGER` invitation-based onboarding and server-enforced scoped permissions. The role can manage only searches where it has explicit direct membership; organization membership alone is insufficient. Other non-privileged roles retain the existing active-organization access path. Regional managers cannot create searches, administer users/invitations, or bypass search access.
+  - [ ] Define a structured region/project assignment model and review the requested global audit scope before granting cross-project audit or deletion-policy responsibilities; the current role does not confer these powers.
+  - [x] Add desktop component tests for search-scoped list/create/update, validation, and online-only failure states; add API regression tests rejecting stored photo URLs and hard deletion.
+  - [ ] Verify audit and retention behavior against PostgreSQL/production configuration; define separate audit-log retention and review responsibilities, then expand authorization and end-to-end tests.
+  - [ ] Define the online-only degraded-network contract and test it before field use; no offline cache or command queue is in scope.
+  - [ ] Only then revisit field/mobile access, photo handling, deletion, and operational readiness.
 - [ ] Team API, membership and status lifecycle.
 - [ ] Sector geometry API and editor.
 - [ ] Assignment API linking team + sector + operational period + task.
@@ -68,7 +77,9 @@ This roadmap converts the product requirements and gap analysis into executable 
 
 - [ ] Complete automated unit/integration/API tests.
 - [ ] Migration verification in CI.
-- [ ] Mobile and desktop build checks.
+- [x] Verify native Tauri bundle CI for Windows MSI and Linux DEB.
+- [ ] Run platform runtime smoke tests for native session-token storage through Windows Credential Manager and Linux Secret Service, including no plaintext fallback and unavailable-store behavior; CI bundle builds and desktop unit tests are not a substitute for exercising the actual OS stores.
+- [ ] Mobile build checks, release signing, and macOS native packaging (planned for a later increment).
 - [ ] Security scanning.
 - [ ] Backup and restore drills.
 - [ ] Observability and structured logs.

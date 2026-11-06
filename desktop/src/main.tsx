@@ -1,9 +1,14 @@
-type Role = "SYSTEM_OWNER"|"SUPERADMIN"|"SUPERUSER"|"ADMIN"|"LEADER"|"COORDINATOR"|"SEARCHER"|"VIEWER";
+type Role = "SYSTEM_OWNER"|"SUPERADMIN"|"SUPERUSER"|"ADMIN"|"LEADER"|"COORDINATOR"|"REGIONAL_MANAGER"|"SEARCHER"|"VIEWER";
 import React,{useEffect,useMemo,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {MapContainer,TileLayer,Marker,Popup,Polyline,useMap} from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {api} from './api.js';
+import {clearSessionToken,getSessionToken,setSessionToken} from './sessionToken.js';
+import SubjectPanel from './SubjectPanel.js';
+import SearchMembers from './SearchMembers.js';
+import SectorZones from './SectorZones.js';
 import './style.css';
 
 type User={id:string;name:string;email?:string;phone?:string;role:string;active?:boolean};
@@ -11,11 +16,15 @@ type Search={id:string;title:string;status:string;area?:string;description?:stri
 type Task={id:string;title:string;description?:string;status:string;priority:number;assignee?:string;lat?:number;lng?:number};
 type Invitation={id:string;name:string;email:string|null;phone:string|null;role:Role;expires_at:string;accepted_at:string|null;accepted_user_id:string|null;revoked_at:string|null;created_at:string};
 type CreatedInvitation=Invitation&{token:string};
-const API=import.meta.env.VITE_API_URL??'http://localhost:18080/api/v1';
+const roleLabels:Record<Role,string>={
+  SYSTEM_OWNER:'Владелец системы',SUPERADMIN:'Суперадминистратор',SUPERUSER:'Суперпользователь',
+  ADMIN:'Администратор',LEADER:'Руководитель поиска',COORDINATOR:'Координатор',
+  REGIONAL_MANAGER:'Региональный руководитель',SEARCHER:'Поисковик',VIEWER:'Наблюдатель'
+};
+const roleLabel=(role:string)=>roleLabels[role as Role]??role;
 const allowPublicRegistration=import.meta.env.VITE_ALLOW_PUBLIC_REGISTRATION==='true';
-async function api<T>(path:string,opts:RequestInit={}){const token=localStorage.getItem('kukla_token');const r=await fetch(API+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})}});if(!r.ok)throw new Error((await r.json().catch(()=>({message:r.statusText}))).message);return r.json() as Promise<T>}
 function FixLeaflet(){useEffect(()=>{const icon=L.icon({iconUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',iconRetinaUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41]});(L.Marker.prototype.options as any).icon=icon},[]);return null}
-function Login({onLogin}:{onLogin:(u:User)=>void}){
+function Login({onLogin,initialError}:{onLogin:(u:User)=>void;initialError?:string}){
   const [mode,setMode]=useState<'login'|'invitation'|'register'>('login');
   const [login,setLogin]=useState('');
   const [name,setName]=useState('');
@@ -23,8 +32,9 @@ function Login({onLogin}:{onLogin:(u:User)=>void}){
   const [invitationToken,setInvitationToken]=useState('');
   const [password,setPassword]=useState('');
   const [passwordConfirm,setPasswordConfirm]=useState('');
-  const [error,setError]=useState('');
+  const [error,setError]=useState(initialError??'');
   const [busy,setBusy]=useState(false);
+  useEffect(()=>{setError(initialError??'')},[initialError]);
 
   const submit=async(event:React.FormEvent<HTMLFormElement>)=>{
     event.preventDefault();
@@ -56,7 +66,7 @@ function Login({onLogin}:{onLogin:(u:User)=>void}){
           body:JSON.stringify({login:email,password})
         });
       }
-      localStorage.setItem('kukla_token',result.token);
+      await setSessionToken(result.token);
       onLogin(result.user);
     }catch(e){
       setError(e instanceof Error ? e.message : 'Ошибка');
@@ -160,21 +170,23 @@ function Login({onLogin}:{onLogin:(u:User)=>void}){
   </div>
 }
 
-function App(){const [user,setUser]=useState<User|null>(null);const [tab,setTab]=useState<'overview'|'search'|'people'>('overview');const [searches,setSearches]=useState<Search[]>([]);const [selected,setSelected]=useState<Search|null>(null);const [tasks,setTasks]=useState<Task[]>([]);const [members,setMembers]=useState<User[]>([]);const [gps,setGps]=useState<any[]>([]);const [loading,setLoading]=useState(false);
-useEffect(()=>{if(localStorage.getItem('kukla_token'))api<User>('/me').then(setUser).catch(()=>localStorage.removeItem('kukla_token'))},[]);
+function App(){const [user,setUser]=useState<User|null>(null);const [tab,setTab]=useState<'overview'|'search'|'people'>('overview');const [searches,setSearches]=useState<Search[]>([]);const [selected,setSelected]=useState<Search|null>(null);const [tasks,setTasks]=useState<Task[]>([]);const [members,setMembers]=useState<User[]>([]);const [gps,setGps]=useState<any[]>([]);const [loading,setLoading]=useState(false);const [sessionError,setSessionError]=useState('');
+useEffect(()=>{let active=true;const restore=async()=>{try{const token=await getSessionToken();if(!token||!active)return;try{const current=await api<User>('/me');if(active)setUser(current)}catch{try{await clearSessionToken()}catch{}}}catch(error){if(active)setSessionError(error instanceof Error?error.message:'Не удалось открыть системное хранилище учётных данных')}};void restore();return()=>{active=false}},[]);
 const reload=async()=>{const s=await api<Search[]>('/searches');setSearches(s);if(selected){const fresh=s.find(x=>x.id===selected.id);if(fresh)setSelected(fresh)}};
+const refreshSelectedSearch=async()=>{if(!selected)return;const [s,t,m,g]=await Promise.all([api<Search[]>('/searches'),api<Task[]>(`/searches/${selected.id}/tasks`),api<User[]>(`/searches/${selected.id}/members`),api<any[]>(`/searches/${selected.id}/gps`)]);setSearches(s);const fresh=s.find(x=>x.id===selected.id);if(fresh)setSelected(fresh);setTasks(t);setMembers(m);setGps(g)};
 useEffect(()=>{if(user)reload()},[user]);
 useEffect(()=>{if(selected){setLoading(true);Promise.all([api<Task[]>(`/searches/${selected.id}/tasks`),api<User[]>(`/searches/${selected.id}/members`),api<any[]>(`/searches/${selected.id}/gps`)]).then(([t,m,g])=>{setTasks(t);setMembers(m);setGps(g)}).finally(()=>setLoading(false))}},[selected?.id]);
-if(!user)return <Login onLogin={setUser}/>;
-const canManage=['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR'].includes(user.role);
-return <div className="shell"><aside><div className="logo">KuKLA <small>2.1</small></div><div className="profile"><b>{user.name}</b><span>{user.role}</span></div><nav><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}>⌂ Обзор</button><button className={tab==='search'?'active':''} onClick={()=>setTab('search')} disabled={!selected}>◉ Поиск</button><button className={tab==='people'?'active':''} onClick={()=>setTab('people')}>♙ Люди</button></nav><div className="sideSearch"><b>Поиски</b>{searches.map(s=><button key={s.id} onClick={()=>{setSelected(s);setTab('search')}}><span>{s.status==='ACTIVE'?'🔴':'⚪'} {s.title}</span><small>{s.member_count}</small></button>)}</div><button className="logout" onClick={()=>{localStorage.removeItem('kukla_token');location.reload()}}>Выйти</button></aside><main><header><div><div className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</div><h1>{tab==='overview'?'Оперативная обстановка':tab==='search'?(selected?.title??'Поиск'):'Личный состав'}</h1></div><div className="headerActions"><button onClick={reload}>↻ Обновить</button>{canManage&&<button className="primary" onClick={async()=>{const title=prompt('Название поиска');if(!title)return;const s=await api<Search>('/searches',{method:'POST',body:JSON.stringify({title,status:'PLANNED'})});setSearches([s,...searches]);setSelected(s);setTab('search')}}>＋ Новый поиск</button>}</div></header>{tab==='overview'&&<Overview searches={searches} onSelect={s=>{setSelected(s);setTab('search')}}/>}{tab==='search'&&selected&&<SearchView search={selected} tasks={tasks} members={members} gps={gps} canManage={canManage} onRefresh={()=>{reload();}}/>}{tab==='people'&&<People users={members.length?members:undefined} currentUser={user}/>}</main></div>}
+if(!user)return <Login onLogin={setUser} initialError={sessionError}/>;
+const canManage=['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR','REGIONAL_MANAGER'].includes(user.role);
+const canCreateSearch=['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR'].includes(user.role);
+return <div className="shell"><aside><div className="logo">KuKLA <small>2.1</small></div><div className="profile"><b>{user.name}</b><span>{roleLabel(user.role)}</span></div><nav><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}>⌂ Обзор</button><button className={tab==='search'?'active':''} onClick={()=>setTab('search')} disabled={!selected}>◉ Поиск</button><button className={tab==='people'?'active':''} onClick={()=>setTab('people')}>♙ Люди</button></nav><div className="sideSearch"><b>Поиски</b>{searches.map(s=><button key={s.id} onClick={()=>{setSelected(s);setTab('search')}}><span>{s.status==='ACTIVE'?'🔴':'⚪'} {s.title}</span><small>{s.member_count}</small></button>)}</div><button className="logout" onClick={async()=>{try{await api('/auth/logout',{method:'POST'})}catch{}try{await clearSessionToken();location.reload()}catch{window.alert('Не удалось удалить сессию из системного хранилища.')}}}>Выйти</button></aside><main><header><div><div className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</div><h1>{tab==='overview'?'Оперативная обстановка':tab==='search'?(selected?.title??'Поиск'):'Личный состав'}</h1></div><div className="headerActions"><button onClick={reload}>↻ Обновить</button>{canCreateSearch&&<button className="primary" onClick={async()=>{const title=prompt('Название поиска');if(!title)return;const s=await api<Search>('/searches',{method:'POST',body:JSON.stringify({title,status:'PLANNED'})});setSearches([s,...searches]);setSelected(s);setTab('search')}}>＋ Новый поиск</button>}</div></header>{tab==='overview'&&<Overview searches={searches} onSelect={s=>{setSelected(s);setTab('search')}}/>}{tab==='search'&&selected&&<><SearchView search={selected} tasks={tasks} members={members} gps={gps} canManage={canManage} currentUserId={user.id} onRefresh={refreshSelectedSearch}/>{canManage&&<SubjectPanel searchId={selected.id}/>}</>}{tab==='people'&&<People users={members.length?members:undefined} currentUser={user}/>}</main></div>}
 function Overview({searches,onSelect}:{searches:Search[];onSelect:(s:Search)=>void}){const active=searches.filter(s=>s.status==='ACTIVE').length;const tasks=searches.reduce((a,s)=>a+s.open_tasks,0);const people=searches.reduce((a,s)=>a+s.member_count,0);return <><div className="metrics"><Metric label="Активных поисков" value={active}/><Metric label="Открытых задач" value={tasks}/><Metric label="Участников" value={people}/><Metric label="Всего поисков" value={searches.length}/></div><section className="panel"><div className="panelTitle"><h2>Последние поиски</h2><span>{searches.length}</span></div><div className="table">{searches.map(s=><button className="row" key={s.id} onClick={()=>onSelect(s)}><div><b>{s.title}</b><small>{s.area??'Район не указан'}</small></div><span className={'status '+s.status.toLowerCase()}>{s.status}</span><span>{s.member_count} чел.</span><span>{s.open_tasks} задач</span></button>)}</div></section></>}
 function Metric({label,value}:{label:string;value:number}){return <div className="metric"><span>{label}</span><b>{value}</b></div>}
-function SearchView({search,tasks,members,gps,canManage,onRefresh}:{search:Search;tasks:Task[];members:User[];gps:any[];canManage:boolean;onRefresh:()=>void}){const center:[number,number]=[search.incident_lat??54.99,search.incident_lng??73.32];const track=useMemo(()=>gps.slice().reverse().map(p=>[p.lat,p.lng] as [number,number]),[gps]);return <div className="searchLayout"><div className="leftCol"><section className="panel"><div className="panelTitle"><div><h2>Статус</h2><p>{search.description??'Описание отсутствует'}</p></div>{canManage&&<select value={search.status} onChange={async e=>{await api(`/searches/${search.id}`,{method:'PATCH',body:JSON.stringify({status:e.target.value})});onRefresh()}}><option>PLANNED</option><option>ACTIVE</option><option>PAUSED</option><option>COMPLETED</option><option>CANCELLED</option></select>}</div><div className="metrics compact"><Metric label="Участники" value={search.member_count}/><Metric label="Открытые задачи" value={search.open_tasks}/><Metric label="GPS-точки" value={search.gps_points}/></div></section><section className="panel"><div className="panelTitle"><h2>Задачи</h2>{canManage&&<button className="primary" onClick={async()=>{const title=prompt('Название задачи');if(!title)return;await api(`/searches/${search.id}/tasks`,{method:'POST',body:JSON.stringify({title,priority:2})});onRefresh()}}>＋ Задача</button>}</div>{tasks.map(t=><div className="taskRow" key={t.id}><div><b>{t.title}</b><small>{t.description??'Без описания'} {t.assignee?`· ${t.assignee}`:''}</small></div><select value={t.status} onChange={async e=>{await api(`/tasks/${t.id}`,{method:'PATCH',body:JSON.stringify({status:e.target.value})});onRefresh()}}><option>OPEN</option><option>IN_PROGRESS</option><option>DONE</option><option>CANCELLED</option></select></div>)}</section></div><section className="panel mapPanel"><div className="panelTitle"><h2>Оперативная карта</h2><span>{gps.length} GPS</span></div><div className="map"><FixLeaflet/><MapContainer center={center} zoom={11} scrollWheelZoom><TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><Marker position={center}><Popup>Точка происшествия</Popup></Marker>{track.length>1&&<Polyline positions={track}/>}</MapContainer></div><div className="memberList"><b>Участники ({members.length})</b>{members.slice(0,8).map(m=><span key={m.id}>● {m.name}</span>)}</div></section></div>}
+function SearchView({search,tasks,members,gps,canManage,currentUserId,onRefresh}:{search:Search;tasks:Task[];members:User[];gps:any[];canManage:boolean;currentUserId:string;onRefresh:()=>void|Promise<void>}){const center:[number,number]=[search.incident_lat??54.99,search.incident_lng??73.32];const track=useMemo(()=>gps.slice().reverse().map(p=>[p.lat,p.lng] as [number,number]),[gps]);return <div className="searchLayout"><div className="leftCol"><section className="panel"><div className="panelTitle"><div><h2>Статус</h2><p>{search.description??'Описание отсутствует'}</p></div>{canManage&&<select value={search.status} onChange={async e=>{await api(`/searches/${search.id}`,{method:'PATCH',body:JSON.stringify({status:e.target.value})});onRefresh()}}><option>PLANNED</option><option>ACTIVE</option><option>PAUSED</option><option>COMPLETED</option><option>CANCELLED</option></select>}</div><div className="metrics compact"><Metric label="Участники" value={search.member_count}/><Metric label="Открытые задачи" value={search.open_tasks}/><Metric label="GPS-точки" value={search.gps_points}/></div></section><section className="panel"><div className="panelTitle"><h2>Задачи</h2>{canManage&&<button className="primary" onClick={async()=>{const title=prompt('Название задачи');if(!title)return;await api(`/searches/${search.id}/tasks`,{method:'POST',body:JSON.stringify({title,priority:2})});onRefresh()}}>＋ Задача</button>}</div>{tasks.map(t=><div className="taskRow" key={t.id}><div><b>{t.title}</b><small>{t.description??'Без описания'} {t.assignee?`· ${t.assignee}`:''}</small></div><select value={t.status} onChange={async e=>{await api(`/tasks/${t.id}`,{method:'PATCH',body:JSON.stringify({status:e.target.value})});onRefresh()}}><option>OPEN</option><option>IN_PROGRESS</option><option>DONE</option><option>CANCELLED</option></select></div>)}</section></div><section className="panel mapPanel"><div className="panelTitle"><h2>Оперативная карта</h2><span>{gps.length} GPS</span></div><div className="map"><FixLeaflet/><MapContainer center={center} zoom={11} scrollWheelZoom><TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><Marker position={center}><Popup>Точка происшествия</Popup></Marker>{track.length>1&&<Polyline positions={track}/>}</MapContainer></div><SearchMembers searchId={search.id} members={members} currentUserId={currentUserId} canManage={canManage} onChanged={onRefresh}/><SectorZones searchId={search.id} canManage={canManage} onChanged={onRefresh}/></section></div>}
 function invitationRolesFor(actor:Role):Role[]{
-  if(actor==='SYSTEM_OWNER')return ['SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR','SEARCHER','VIEWER'];
-  if(actor==='SUPERADMIN'||actor==='SUPERUSER')return ['ADMIN','LEADER','COORDINATOR','SEARCHER','VIEWER'];
-  if(actor==='ADMIN')return ['LEADER','COORDINATOR','SEARCHER','VIEWER'];
+  if(actor==='SYSTEM_OWNER')return ['SUPERADMIN','SUPERUSER','ADMIN','LEADER','COORDINATOR','REGIONAL_MANAGER','SEARCHER','VIEWER'];
+  if(actor==='SUPERADMIN'||actor==='SUPERUSER')return ['ADMIN','LEADER','COORDINATOR','REGIONAL_MANAGER','SEARCHER','VIEWER'];
+  if(actor==='ADMIN')return ['LEADER','COORDINATOR','REGIONAL_MANAGER','SEARCHER','VIEWER'];
   return [];
 }
 
@@ -275,7 +287,7 @@ function InvitationManager({currentUser}:{currentUser:User}){
         <button type="button" onClick={()=>void copyToken()}>{copied?'Скопировано':'Копировать'}</button>
         <button type="button" onClick={()=>{setCreated(null);setCopied(false)}}>Закрыть</button>
       </div>
-      <small>{created.name} · {created.email??created.phone} · {created.role} · действует до {new Date(created.expires_at).toLocaleString('ru-RU')}</small>
+      <small>{created.name} · {created.email??created.phone} · {roleLabel(created.role)} · действует до {new Date(created.expires_at).toLocaleString('ru-RU')}</small>
     </div>}
 
     {showForm&&<form className="inviteForm" onSubmit={create}>
@@ -300,7 +312,7 @@ function InvitationManager({currentUser}:{currentUser:User}){
       </label>
       <label>Роль
         <select value={role} onChange={e=>setRole(e.target.value as Role)}>
-          {roles.map(value=><option key={value} value={value}>{value}</option>)}
+          {roles.map(value=><option key={value} value={value}>{roleLabel(value)}</option>)}
         </select>
       </label>
       <div className="inviteFormFooter"><small>Токен действует 24 часа и может быть принят один раз.</small><button className="primary" type="submit" disabled={saving}>{saving?'Создание…':'Создать приглашение'}</button></div>
@@ -314,7 +326,7 @@ function InvitationManager({currentUser}:{currentUser:User}){
         const pending=!invite.accepted_at&&!invite.revoked_at&&!expired;
         return <div className="invitationRow" key={invite.id}>
           <div className="invitePerson"><b>{invite.name}</b><small>{invite.email??invite.phone}</small></div>
-          <span className="inviteRole">{invite.role}</span>
+          <span className="inviteRole">{roleLabel(invite.role)}</span>
           <span className={`inviteState ${pending?'pending':status==='Принято'?'accepted':''}`}>{status}</span>
           <small className="inviteExpiry">{pending?'до':'создано'} {new Date(pending?invite.expires_at:invite.created_at).toLocaleDateString('ru-RU')}</small>
           {pending&&<button type="button" className="dangerButton" disabled={revoking===invite.id} onClick={()=>void revoke(invite)}>{revoking===invite.id?'Отзыв…':'Отозвать'}</button>}
@@ -349,11 +361,13 @@ function People({
   },[]);
 
   const canSuperuser=currentUser.role==='SUPERUSER';
+  const canAdministerUsers=['SYSTEM_OWNER','SUPERADMIN','SUPERUSER','ADMIN'].includes(currentUser.role);
 
   const roles:Role[]=[
     'ADMIN',
     'LEADER',
     'COORDINATOR',
+    'REGIONAL_MANAGER',
     'SEARCHER',
     'VIEWER'
   ];
@@ -430,8 +444,9 @@ function People({
                   value={u.role}
                   disabled={
                     saving===u.id ||
+                    !canAdministerUsers ||
                     (isSuperuser&&!canSuperuser) ||
-                    (isSelf&&u.role==='SUPERUSER')
+                    isSelf
                   }
                   onChange={e=>
                     updateUser(
@@ -448,7 +463,7 @@ function People({
                         role==='SUPERUSER'&&!canSuperuser
                       }
                     >
-                      {role}
+                      {roleLabel(role)}
                     </option>
                   ))}
                 </select>
@@ -461,6 +476,7 @@ function People({
                     checked={u.active!==false}
                     disabled={
                       saving===u.id ||
+                      !canAdministerUsers ||
                       isSelf ||
                       (isSuperuser&&!canSuperuser)
                     }
