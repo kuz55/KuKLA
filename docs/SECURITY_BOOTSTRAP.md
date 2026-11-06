@@ -7,8 +7,7 @@ KuKLA must never ship reusable administrator passwords in source control.
 - `SYSTEM_OWNER` is the first and highest-trust owner of an installation.
 - `SUPERADMIN` is a delegated system administrator.
 - `SUPERUSER` is retained as a compatibility role during the RBAC migration.
-- `ADMIN`, `LEADER`, `COORDINATOR`, `REGIONAL_MANAGER`, `SEARCHER`, and `VIEWER` are operational roles.
-- `REGIONAL_MANAGER` can be onboarded by administrator-issued invitation and is not a global/privileged role. Public registration cannot self-assign this role; authorized admins may also change an existing account's role. It can manage a search only after explicit direct membership; organization membership alone is insufficient. Other non-privileged roles may retain active-organization search access. It cannot create searches or manage global users/invitations. A structured region model and global audit access remain unimplemented pending review.
+- `ADMIN`, `LEADER`, `COORDINATOR`, `SEARCHER`, and `VIEWER` are operational roles.
 
 GitHub contributor permissions and KuKLA application permissions are independent. Being a project contributor must never grant a user a KuKLA system role.
 
@@ -37,7 +36,7 @@ Never commit real values to Git.
 
 After the owner signs in, an authorized administrator can create a one-time invitation through `POST /api/v1/users/invitations`. The API returns a random token once; only its SHA-256 hash is stored. Deliver the token to the invitee through a trusted out-of-band channel. The invitee chooses a password with `POST /api/v1/auth/accept-invitation`. Invitations expire after 24 hours and can be revoked before acceptance.
 
-The API does not send email or SMS. A temporary create/revoke/accept screen exists in the Tauri/React desktop client; the mobile client does not yet have onboarding screens, and the Go/C prototype is not connected to the server. Public self-registration should remain disabled. The inviter's role is checked when the invitation is issued and accepted. `SYSTEM_OWNER` cannot be assigned through an invitation; it is reserved for the one-time bootstrap process.
+The API does not send email or SMS. A temporary create/revoke/accept screen exists in the deprecated Tauri/React desktop client; the target Go/C and mobile clients do not yet have onboarding screens. Public self-registration should remain disabled. The inviter's role is checked when the invitation is issued and accepted. `SYSTEM_OWNER` cannot be assigned through an invitation; it is reserved for the one-time bootstrap process.
 
 ## Existing installations
 

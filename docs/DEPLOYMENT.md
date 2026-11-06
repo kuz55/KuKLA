@@ -53,20 +53,17 @@ The local-only profile is not suitable for Internet access. For production:
 
 For a temporary LAN-only development test, use a firewall-restricted host and explicitly set `SERVER_BIND=0.0.0.0` in `.env`; do not use plain HTTP over the public Internet. Restore `SERVER_BIND=127.0.0.1` afterwards.
 
-## 4. Tauri desktop client
+## 4. Legacy Tauri/React client
 
-`desktop/` is the target cross-platform native desktop client. It currently includes the command UI and temporary invitation-management/acceptance screens; invitation tokens still require trusted out-of-band delivery. Native Windows and Linux packages are built in CI; macOS packaging is planned but not yet verified.
-
-On a workstation with Node.js 22+, Rust and the Tauri platform dependencies:
+`desktop/` is deprecated and retained as a behavior reference. It currently includes a temporary invitation-management and acceptance UI, but is not the target desktop client and does not deliver tokens by email/SMS. On a workstation with Node.js 22+, Rust and the Tauri Linux dependencies:
 
 ```bash
 cd desktop
 npm ci
-npm run check
-npm run tauri -- build
+VITE_API_URL=http://localhost:18080/api/v1 npm run tauri build
 ```
 
-The packaged default API is the local Compose service at `http://localhost:18080/api/v1`; set `VITE_API_URL` when building for another deployment. Vite development mode uses a relative API path and dev-server proxy. `rebuild/` is a separate Go/C + GTK local prototype and is not connected to the authoritative API. Public registration is hidden unless the desktop UI is built with `VITE_ALLOW_PUBLIC_REGISTRATION=true`, and the server must also be explicitly configured with `ALLOW_PUBLIC_REGISTRATION=true`. Do not enable either setting in production.
+The target desktop implementation is `rebuild/` (Go/C + GTK4), but it is not yet connected to the authoritative server API; do not treat the local prototype as a synchronized production client. Public registration is hidden in the legacy UI unless built with `VITE_ALLOW_PUBLIC_REGISTRATION=true`, and the server must also be explicitly configured with `ALLOW_PUBLIC_REGISTRATION=true`. Do not enable either setting in production.
 
 ## 5. Mobile build workstation
 
