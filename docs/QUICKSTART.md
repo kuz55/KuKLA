@@ -14,11 +14,10 @@
 
 ## Clients
 
-- The target desktop client is Tauri + React (`desktop/`), packaged as a native Windows/Linux application; macOS support is planned. Build with `cd desktop && npm ci && npm run tauri -- build`. Windows/Linux native bundles are checked in CI.
-- The packaged desktop default points to the local Compose API at `http://localhost:18080/api/v1`; set `VITE_API_URL` when building against another server. Vite development uses a same-origin proxy.
+- The legacy Tauri/React client uses `VITE_API_URL`; the packaged default points to the local Compose API at `http://localhost:18080/api/v1`.
 - The Flutter default is for the Android emulator (`http://10.0.2.2:18080/api/v1`). For a physical device or a production deployment, set `API_URL` explicitly. Use HTTPS for remote access.
-- `rebuild/` contains an experimental Go/C GTK local prototype that is not synchronized with the server and is not the target desktop client.
-- In the Tauri client, administrators can create/revoke invitations from **Люди**. Invitees can choose **Есть приглашение?** on the login screen to set a password. Copy and deliver the one-time token through a trusted channel; email/SMS delivery is not implemented.
+- The Go/C GTK client is the target desktop client, but its current local workflow is not yet synchronized with the server.
+- In the deprecated Tauri/React client, administrators can create/revoke invitations from **Люди**. Invitees can choose **Есть приглашение?** on the login screen to set a password. Copy and deliver the one-time token through a trusted channel; email/SMS delivery is not implemented.
 
 Do not use demo credentials from old documentation. No demo users are seeded. See [SECURITY_BOOTSTRAP.md](SECURITY_BOOTSTRAP.md) for the one-time owner bootstrap model.
 

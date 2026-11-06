@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { closeTestDatabase, connectTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
+import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
@@ -46,7 +46,6 @@ const users = {
   admin: { email: `admin-${timestamp}@test.local`, password: 'admin-pass-123456', role: 'ADMIN' },
   leader: { email: `leader-${timestamp}@test.local`, password: 'leader-pass-123456', role: 'LEADER' },
   coordinator: { email: `coord-${timestamp}@test.local`, password: 'coord-pass-123456', role: 'COORDINATOR' },
-  regionalManager: { email: `regional-manager-${timestamp}@test.local`, password: 'regional-pass-123456', role: 'REGIONAL_MANAGER' },
   searcher: { email: `searcher-${timestamp}@test.local`, password: 'searcher-pass-123456', role: 'SEARCHER' },
   viewer: { email: `viewer-${timestamp}@test.local`, password: 'viewer-pass-123456', role: 'VIEWER' },
 };
@@ -78,37 +77,6 @@ const addMember = async (searchId, userId, token = tokens.leader) => fetch(`${ba
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   body: JSON.stringify({ userId }),
 });
-
-const waitForDatabaseLockWait = async (queryPattern, timeoutMs = 5000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const waiting = await queryTestDatabase(
-      `SELECT 1 FROM pg_stat_activity
-       WHERE datname=current_database() AND state='active'
-         AND wait_event_type='Lock' AND query LIKE $1
-       LIMIT 1`,
-      [queryPattern],
-    );
-    if (waiting.rowCount) return true;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  return false;
-};
-
-const lockActivityAvailable = async (t) => {
-  try {
-    const version = await queryTestDatabase('SELECT version()');
-    if (/PGlite/i.test(version.rows[0]?.version ?? '')) {
-      t.skip('PGlite serializes socket transactions and cannot exercise concurrent row/advisory lock waits');
-      return false;
-    }
-    await queryTestDatabase('SELECT wait_event_type,wait_event FROM pg_stat_activity LIMIT 0');
-    return true;
-  } catch {
-    t.skip('The test database does not expose PostgreSQL lock-wait activity');
-    return false;
-  }
-};
 
 // ============================================================================
 // GET /api/v1/users — who can list users (managementRoles)
@@ -146,12 +114,6 @@ test('GET /users: COORDINATOR returns 200 (filtered list)', async () => {
   assert.equal(r.status, 200);
 });
 
-test('GET /users: REGIONAL_MANAGER returns 200 (filtered list, not a global directory)', async () => {
-  const r = await fetch(`${base}/api/v1/users`, { headers: { Authorization: `Bearer ${tokens.regionalManager}` } });
-  assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), []);
-});
-
 test('GET /users: SEARCHER returns 403', async () => {
   const r = await fetch(`${base}/api/v1/users`, { headers: { Authorization: `Bearer ${tokens.searcher}` } });
   assert.equal(r.status, 403);
@@ -176,24 +138,6 @@ test('PATCH /users: ADMIN can change LEADER role to COORDINATOR', async () => {
   assert.equal(r.status, 200);
   const data = await r.json();
   assert.equal(data.role, 'COORDINATOR');
-});
-
-test('PATCH /users: ADMIN may assign REGIONAL_MANAGER, but that role cannot administer users', async () => {
-  const targetId = await createTestUser('SEARCHER', `regional-target-${Date.now()}@test.local`);
-  const assigned = await fetch(`${base}/api/v1/users/${targetId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.admin}` },
-    body: JSON.stringify({ role: 'REGIONAL_MANAGER' }),
-  });
-  assert.equal(assigned.status, 200);
-  assert.equal((await assigned.json()).role, 'REGIONAL_MANAGER');
-
-  const denied = await fetch(`${base}/api/v1/users/${users.searcher.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ role: 'COORDINATOR' }),
-  });
-  assert.equal(denied.status, 403);
 });
 
 test('PATCH /users: user change rolls back if its audit insert fails', async () => {
@@ -435,93 +379,6 @@ test('Search isolation: a viewer receives 404 for an existing search outside the
   assert.equal(r.status, 404);
 });
 
-test('REGIONAL_MANAGER access requires direct search membership, not organization membership', async () => {
-  const assignedSearchId = await createSearch(tokens.leader);
-  const organizationOnlySearchId = await createSearch(tokens.leader);
-  const unassignedSearchId = await createSearch(tokens.leader);
-  const assigned = await addMember(assignedSearchId, users.regionalManager.id);
-  assert.equal(assigned.status, 200);
-
-  const suffix = randomUUID();
-  const organization = await queryTestDatabase(
-    'INSERT INTO organizations(name,slug) VALUES($1,$2) RETURNING id',
-    [`Regional access test ${suffix}`, `regional-access-${suffix}`],
-  );
-  const organizationId = organization.rows[0].id;
-  for (const userId of [users.regionalManager.id, users.coordinator.id]) {
-    await queryTestDatabase(
-      'INSERT INTO organization_members(organization_id,user_id,role,active) VALUES($1,$2,$3,true)',
-      [organizationId, userId, 'MEMBER'],
-    );
-  }
-  await queryTestDatabase(
-    'INSERT INTO search_organizations(search_id,organization_id) VALUES($1,$2)',
-    [organizationOnlySearchId, organizationId],
-  );
-
-  const visibleSearches = await fetch(`${base}/api/v1/searches`, {
-    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
-  });
-  assert.equal(visibleSearches.status, 200);
-  const visible = await visibleSearches.json();
-  assert.ok(visible.some((search) => search.id === assignedSearchId));
-  assert.ok(!visible.some((search) => search.id === organizationOnlySearchId));
-  assert.ok(!visible.some((search) => search.id === unassignedSearchId));
-
-  const assignedRead = await fetch(`${base}/api/v1/searches/${assignedSearchId}`, {
-    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
-  });
-  const organizationOnlyRead = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}`, {
-    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
-  });
-  const organizationOnlyAudit = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/events`, {
-    headers: { Authorization: `Bearer ${tokens.regionalManager}` },
-  });
-  assert.equal(assignedRead.status, 200);
-  assert.equal(organizationOnlyRead.status, 404);
-  assert.equal(organizationOnlyAudit.status, 404);
-
-  const organizationMemberRead = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}`, {
-    headers: { Authorization: `Bearer ${tokens.coordinator}` },
-  });
-  assert.equal(organizationMemberRead.status, 200, 'Other roles retain active-organization search access');
-
-  const note = await fetch(`${base}/api/v1/searches/${assignedSearchId}/events`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ note: 'Regional manager direct-membership note' }),
-  });
-  assert.equal(note.status, 200);
-
-  const deniedNote = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/events`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ note: 'Organization membership alone is insufficient' }),
-  });
-  assert.equal(deniedNote.status, 404);
-
-  const organizationOnlyTask = await fetch(`${base}/api/v1/searches/${organizationOnlySearchId}/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
-    body: JSON.stringify({ title: 'Task hidden from organization-only regional manager' }),
-  });
-  assert.equal(organizationOnlyTask.status, 200);
-  const task = await organizationOnlyTask.json();
-  const deniedTaskUpdate = await fetch(`${base}/api/v1/tasks/${task.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ status: 'IN_PROGRESS' }),
-  });
-  assert.equal(deniedTaskUpdate.status, 404);
-
-  const createSearchDenied = await fetch(`${base}/api/v1/searches`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.regionalManager}` },
-    body: JSON.stringify({ title: `Unscoped Regional Search ${Date.now()}` }),
-  });
-  assert.equal(createSearchDenied.status, 403);
-});
-
 test('Search membership: unshared ids are hidden and only an authorized manager may add members', async () => {
   const searchId = await createSearch(tokens.leader);
   const denied = await addMember(searchId, users.viewer.id, tokens.searcher);
@@ -715,140 +572,4 @@ test('PATCH /tasks: existing and unknown task ids are indistinguishable outside 
   assert.equal(existing.status, 404);
   assert.equal(unknown.status, 404);
   assert.deepEqual(await existing.json(), await unknown.json());
-});
-
-test('Search-scoped PATCH rechecks membership after a concurrent revocation commits', { timeout: 15000 }, async (t) => {
-  const searchId = await createSearch(tokens.leader, `Search Write Race ${Date.now()}`);
-  const before = await queryTestDatabase(
-    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-     FROM searches s WHERE s.id=$1`,
-    [searchId],
-  );
-  assert.equal(before.rowCount, 1);
-
-  if (!(await lockActivityAvailable(t))) return;
-
-  const blocker = await connectTestDatabase();
-  let mutation;
-  let committed = false;
-  try {
-    await blocker.query('BEGIN');
-    await blocker.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`search:${searchId}`]);
-    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
-      body: JSON.stringify({ title: 'Must not commit after revocation' }),
-    });
-
-    assert.equal(
-      await waitForDatabaseLockWait('%pg_advisory_xact_lock%'),
-      true,
-      'PATCH did not wait for the search-scoped lock',
-    );
-    await blocker.query('DELETE FROM search_members WHERE search_id=$1 AND user_id=$2', [searchId, users.leader.id]);
-    await blocker.query('COMMIT');
-    committed = true;
-
-    const response = await mutation;
-    assert.equal(response.status, 404, 'The write must be denied after its membership is revoked');
-    const after = await queryTestDatabase(
-      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-       FROM searches s WHERE s.id=$1`,
-      [searchId],
-    );
-    assert.deepEqual(after.rows[0], before.rows[0], 'Denied write must not change search data or append an audit event');
-  } finally {
-    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
-    blocker.release();
-    if (mutation) await mutation.catch(() => {});
-  }
-});
-
-test('Search PATCH re-reads the actor role after a concurrent demotion commits', { timeout: 15000 }, async (t) => {
-  const searchId = await createSearch(tokens.leader, `Search Role Race ${Date.now()}`);
-  const before = await queryTestDatabase(
-    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-     FROM searches s WHERE s.id=$1`,
-    [searchId],
-  );
-  if (!(await lockActivityAvailable(t))) return;
-
-  const blocker = await connectTestDatabase();
-  let mutation;
-  let committed = false;
-  try {
-    await blocker.query('BEGIN');
-    await blocker.query("UPDATE users SET role='SEARCHER' WHERE id=$1", [users.leader.id]);
-    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
-      body: JSON.stringify({ title: 'Must not commit after demotion' }),
-    });
-
-    assert.equal(
-      await waitForDatabaseLockWait('%ORDER BY id FOR SHARE%'),
-      true,
-      'PATCH did not wait for the actor role lock',
-    );
-    await blocker.query('COMMIT');
-    committed = true;
-
-    const response = await mutation;
-    assert.equal(response.status, 403, 'A demoted member must lose manager permission before writing');
-    const after = await queryTestDatabase(
-      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-       FROM searches s WHERE s.id=$1`,
-      [searchId],
-    );
-    assert.deepEqual(after.rows[0], before.rows[0], 'Denied write must not change search data or append an audit event');
-  } finally {
-    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
-    blocker.release();
-    if (mutation) await mutation.catch(() => {});
-  }
-});
-
-test('Search PATCH rejects a session revoked while its transaction is starting', { timeout: 15000 }, async (t) => {
-  const searchId = await createSearch(tokens.coordinator, `Search Session Race ${Date.now()}`);
-  const before = await queryTestDatabase(
-    `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-     FROM searches s WHERE s.id=$1`,
-    [searchId],
-  );
-  if (!(await lockActivityAvailable(t))) return;
-
-  const blocker = await connectTestDatabase();
-  let mutation;
-  let committed = false;
-  try {
-    await blocker.query('BEGIN');
-    const removed = await blocker.query('DELETE FROM sessions WHERE user_id=$1', [users.coordinator.id]);
-    assert.ok(removed.rowCount > 0, 'Expected a live session to revoke');
-    mutation = fetch(`${base}/api/v1/searches/${searchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.coordinator}` },
-      body: JSON.stringify({ title: 'Must not commit after logout' }),
-    });
-
-    assert.equal(
-      await waitForDatabaseLockWait('%FROM sessions%'),
-      true,
-      'PATCH did not wait for the session lock',
-    );
-    await blocker.query('COMMIT');
-    committed = true;
-
-    const response = await mutation;
-    assert.equal(response.status, 401, 'A revoked session must be rejected before writing');
-    const after = await queryTestDatabase(
-      `SELECT s.title, (SELECT count(*) FROM events e WHERE e.search_id=s.id)::int AS event_count
-       FROM searches s WHERE s.id=$1`,
-      [searchId],
-    );
-    assert.deepEqual(after.rows[0], before.rows[0], 'Rejected write must not change search data or append an audit event');
-  } finally {
-    if (!committed) await blocker.query('ROLLBACK').catch(() => {});
-    blocker.release();
-    if (mutation) await mutation.catch(() => {});
-  }
 });

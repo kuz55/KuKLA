@@ -1,8 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { pool } from '../config.js';
-import { auth, commitSearchMutation, parseId, requireSearchAccess, requireSearchWriteAccess } from '../http.js';
-import { managementRoles } from '../rbac.js';
+import { auth, parseId, requireSearchAccess } from '../http.js';
 
 const pointSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -16,11 +15,12 @@ const pointSchema = z.object({
 const gpsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/v1/searches/:id/gps', { preHandler: auth }, async (req) => {
     const id = parseId(req);
+    await requireSearchAccess(req, id);
+    const body = z.object({ points: z.array(pointSchema).min(1).max(1000) }).parse(req.body);
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await requireSearchWriteAccess(req, id, client);
-      const body = z.object({ points: z.array(pointSchema).min(1).max(1000) }).parse(req.body);
       for (const point of body.points) {
         await client.query(
           `INSERT INTO gps_points(search_id,user_id,lat,lng,accuracy,altitude,speed,recorded_at)
@@ -28,14 +28,15 @@ const gpsRoutes: FastifyPluginAsync = async (app) => {
           [id, req.user.id, point.lat, point.lng, point.accuracy ?? null, point.altitude ?? null, point.speed ?? null, point.recorded_at ?? null],
         );
       }
-      await commitSearchMutation(req, client);
-      return { ok: true, count: body.points.length };
+      await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+
+    return { ok: true, count: body.points.length };
   });
 
   app.get('/api/v1/searches/:id/gps', { preHandler: auth }, async (req) => {
@@ -79,10 +80,8 @@ const gpsRoutes: FastifyPluginAsync = async (app) => {
       );
       const tasks = await client.query('SELECT * FROM tasks WHERE search_id=$1 ORDER BY created_at', [id]);
       const events = await client.query(
-        `SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id
-         WHERE e.search_id=$1 AND ($2::boolean OR e.type NOT IN ('SUBJECT_CREATED','SUBJECT_UPDATED'))
-         ORDER BY e.created_at DESC LIMIT 200`,
-        [id, managementRoles.includes(req.user.role)],
+        'SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 ORDER BY e.created_at DESC LIMIT 200',
+        [id],
       );
       const gps = await client.query(
         'SELECT g.*,u.name user_name FROM gps_points g JOIN users u ON u.id=g.user_id WHERE g.search_id=$1 ORDER BY g.recorded_at DESC,g.id DESC LIMIT 5000',

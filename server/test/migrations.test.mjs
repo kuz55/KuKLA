@@ -68,22 +68,16 @@ test('migrations: re-run on already migrated dev DB is a no-op (idempotency)', (
   assert.doesNotMatch(result.stdout, /Applied /);
 });
 
-test('migrations: clean DB applies all 10 migrations, schema complete, second run no-op', async () => {
+test('migrations: clean DB applies all 9 migrations, schema complete, second run no-op', async () => {
   await recreateDb(TEST_DB);
   try {
     const first = runMigrate(serverDir, dbUrl(TEST_DB));
     assert.equal(first.status, 0, first.stderr);
-    assert.equal((first.stdout.match(/Applied /g) || []).length, 10, 'expected exactly 10 applied migrations on clean DB');
+    assert.equal((first.stdout.match(/Applied /g) || []).length, 9, 'expected exactly 9 applied migrations on clean DB');
 
     await withDatabase(TEST_DB, async (pool) => {
       const migrations = await pool.query('SELECT count(*)::int AS count FROM schema_migrations');
-      assert.equal(migrations.rows[0].count, 10);
-      const roleConstraints = await pool.query(
-        `SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint
-         WHERE conname IN ('users_role_check','user_invitations_role_check')`,
-      );
-      assert.equal(roleConstraints.rowCount, 2);
-      assert.ok(roleConstraints.rows.every((constraint) => constraint.definition.includes('REGIONAL_MANAGER')));
+      assert.equal(migrations.rows[0].count, 9);
       const tables = await pool.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'");
       assert.equal(tables.rows[0].count, 31, 'expected 31 public tables after full migration');
     });
@@ -102,7 +96,7 @@ test('migrations: dry-run reports pending migrations without applying them', asy
   try {
     const dry = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
     assert.equal(dry.status, 0, dry.stderr);
-    assert.equal((dry.stdout.match(/Pending /g) || []).length, 10, 'dry-run should list all 10 migrations as pending');
+    assert.equal((dry.stdout.match(/Pending /g) || []).length, 9, 'dry-run should list all 9 migrations as pending');
     assert.doesNotMatch(dry.stdout, /Applied /);
     assert.match(dry.stdout, /would be applied/);
 
@@ -113,7 +107,7 @@ test('migrations: dry-run reports pending migrations without applying them', asy
 
     const applied = runMigrate(serverDir, dbUrl(TEST_DB));
     assert.equal(applied.status, 0, applied.stderr);
-    assert.equal((applied.stdout.match(/Applied /g) || []).length, 10);
+    assert.equal((applied.stdout.match(/Applied /g) || []).length, 9);
 
     const after = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
     assert.equal(after.status, 0, after.stderr);

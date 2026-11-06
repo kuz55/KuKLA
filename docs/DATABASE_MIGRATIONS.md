@@ -58,7 +58,6 @@ migration runner.
 007_disable_legacy_seed_accounts.sql
 008_backfill_search_creators.sql
 009_user_invitations.sql
-010_regional_manager_role.sql
 ```
 
 Runner хранит применённые версии в таблице `schema_migrations`, поэтому
@@ -383,26 +382,16 @@ ROLLBACK
 
 ---
 
-## 010_regional_manager_role.sql
-
-Расширяет ограничения ролей у пользователей и приглашений, добавляя
-`REGIONAL_MANAGER`. Само назначение роли не даёт глобального доступа: API
-пропускает пользователя только при выполнении обычной проверки доступа к
-поиску (прямое членство или активное членство в организации). Структурированной
-модели регионов и глобального аудита для этой роли миграция не добавляет.
-
----
-
 # 10. Следующая миграция
 
 Следующей для GIS должна быть:
 
 ```text
-011_gis_foundation.sql
+010_gis_foundation.sql
 ```
 
-(Номера 006–010 уже заняты security, backfill, onboarding и ролью регионального
-руководителя; проектные GIS/track/sync migrations сдвигаются на 011 и далее.)
+(Номера 006–009 уже заняты security, backfill и onboarding-миграциями;
+проектные GIS/track/sync migrations сдвигаются на 010 и далее.)
 
 Migration runner к этому моменту уже внедрён, поэтому новая миграция больше
 не зависит от механизма начальной инициализации Docker.
@@ -994,21 +983,19 @@ Monitoring
           ↓
 6. 006–008                   — security integrity, legacy seed, backfill
           ↓
-7. 009_user_invitations      — одноразовый onboarding
+7. 009_user_invitations      — добавлена (проверка/применение ожидают PostgreSQL)
           ↓
-8. 010_regional_manager_role — добавлена
+8. 010_gis_foundation
           ↓
-9. 011_gis_foundation
+9. 011_tracks_and_gps
           ↓
-10. 012_tracks_and_gps
+10. 012_sync_hardening
           ↓
-11. 013_sync_hardening
+11. 013_permissions
           ↓
-12. 014_permissions
+12. 014_organization_isolation
           ↓
-13. 015_organization_isolation
-          ↓
-14. дальнейшие hardening migrations
+13. дальнейшие hardening migrations
 ```
 
 Migration runner внедрён и покрыт тестами, поэтому дальнейшие миграции
