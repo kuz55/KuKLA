@@ -3,15 +3,30 @@ import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { pool } from '../config.js';
 import { auth, commitSearchMutation, parseId, requireSearchAccess, requireSearchManagement } from '../http.js';
+import { computeMetrics, validateGeometry, type ZoneType } from '../geo.js';
 
 const parseUuid = (value: unknown) => z.string().uuid().parse(value);
 const geometry = z.record(z.string(), z.unknown()).default({});
+const zoneType = z.enum(['FOOT_AREA', 'VEHICLE_CORRIDOR', 'UAV_AREA', 'GENERIC']).default('GENERIC');
+const sweepParams = z.record(z.string(), z.unknown()).default({});
+
+const withMetrics = (s: {
+  geometry: unknown;
+  zone_type?: string;
+  sweep_params?: unknown;
+  [key: string]: unknown;
+}) => ({
+  ...s,
+  zoneType: s.zone_type ?? 'GENERIC',
+  sweepParams: s.sweep_params ?? {},
+  metrics: computeMetrics(s.geometry, (s.zone_type ?? 'GENERIC') as ZoneType, (s.sweep_params as object) ?? {}),
+});
 
 const sectorRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/searches/:id/sectors', { preHandler: auth }, async (req) => {
     const searchId = parseId(req);
     await requireSearchAccess(req, searchId);
-    return (await pool.query(
+    const rows = (await pool.query(
       `SELECT s.*, COALESCE(
           json_agg(json_build_object(
             'id', a.id, 'teamId', a.team_id, 'operationalPeriodId', a.operational_period_id,
@@ -24,6 +39,30 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
        ORDER BY s.code`,
       [searchId],
     )).rows;
+    return rows.map(withMetrics);
+  });
+
+  app.get('/api/v1/searches/:id/coverage', { preHandler: auth }, async (req) => {
+    const searchId = parseId(req);
+    await requireSearchAccess(req, searchId);
+    const rows = (await pool.query(
+      'SELECT zone_type, geometry, sweep_params FROM search_sectors WHERE search_id=$1',
+      [searchId],
+    )).rows;
+    const byType: Record<string, { count: number; areaSqM: number; plannedCoverageSqM: number; podPct: number }> = {};
+    let totalArea = 0;
+    let totalPlanned = 0;
+    for (const s of rows) {
+      const m = computeMetrics(s.geometry, s.zone_type as ZoneType, (s.sweep_params as object) ?? {});
+      totalArea += m.areaSqM;
+      totalPlanned += m.plannedCoverageSqM;
+      const t = (byType[s.zone_type] ??= { count: 0, areaSqM: 0, plannedCoverageSqM: 0, podPct: 0 });
+      t.count += 1;
+      t.areaSqM += m.areaSqM;
+      t.plannedCoverageSqM += m.plannedCoverageSqM;
+      t.podPct += m.podPct;
+    }
+    return { totalAreaSqM: totalArea, totalPlannedCoverageSqM: totalPlanned, byType };
   });
 
   app.post('/api/v1/searches/:id/sectors', { preHandler: auth }, async (req) => {
@@ -32,7 +71,9 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
       code: z.string().min(1).max(20),
       name: z.string().optional(),
       priority: z.number().int().min(1).max(3).default(2),
+      zoneType,
       geometry,
+      sweepParams,
       notes: z.string().optional(),
     }).safeParse(req.body);
     const client = await pool.connect();
@@ -41,16 +82,17 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
       await requireSearchManagement(req, searchId, client);
       if (!parsed.success) throw parsed.error;
       const b = parsed.data;
+      if (!validateGeometry(b.geometry)) throw httpErrors.badRequest('Invalid GeoJSON geometry');
       const result = await client.query(
-        `INSERT INTO search_sectors(search_id, code, name, priority, geometry, notes, created_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [searchId, b.code, b.name ?? null, b.priority, b.geometry, b.notes ?? null, req.user.id],
+        `INSERT INTO search_sectors(search_id, code, name, priority, zone_type, geometry, sweep_params, notes, created_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [searchId, b.code, b.name ?? null, b.priority, b.zoneType, b.geometry, b.sweepParams, b.notes ?? null, req.user.id],
       );
       const sector = result.rows[0];
       await client.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
         [searchId, req.user.id, 'SECTOR_CREATED', { sectorId: sector.id }]);
       await commitSearchMutation(req, client);
-      return sector;
+      return withMetrics(sector);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -68,7 +110,9 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
       status: z.enum(['UNSEARCHED', 'ASSIGNED', 'SEARCHING', 'COMPLETE', 'SUSPENDED']).optional(),
       priority: z.number().int().min(1).max(3).optional(),
       pod: z.number().min(0).max(100).nullable().optional(),
+      zoneType,
       geometry,
+      sweepParams,
       notes: z.string().nullable().optional(),
     }).refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' }).parse(req.body);
 
@@ -81,12 +125,16 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
         [sectorId, searchId],
       );
       if (!current.rowCount) throw httpErrors.notFound('Sector not found');
+      if (body.geometry !== undefined && !validateGeometry(body.geometry)) {
+        throw httpErrors.badRequest('Invalid GeoJSON geometry');
+      }
       const sets: string[] = [];
       const values: unknown[] = [sectorId];
       let i = 2;
       for (const [key, col] of [
         ['code', 'code'], ['name', 'name'], ['status', 'status'], ['priority', 'priority'],
-        ['pod', 'pod'], ['geometry', 'geometry'], ['notes', 'notes'],
+        ['pod', 'pod'], ['zoneType', 'zone_type'], ['geometry', 'geometry'],
+        ['sweepParams', 'sweep_params'], ['notes', 'notes'],
       ] as const) {
         if (body[key] !== undefined) { sets.push(`${col}=$${i++}`); values.push(body[key]); }
       }
@@ -101,7 +149,7 @@ const sectorRoutes: FastifyPluginAsync = async (app) => {
       await client.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
         [searchId, req.user.id, 'SECTOR_UPDATED', { sectorId }]);
       await commitSearchMutation(req, client);
-      return sector;
+      return withMetrics(sector);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

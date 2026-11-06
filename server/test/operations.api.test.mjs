@@ -229,3 +229,39 @@ test('closeout: management closes the search and marks it COMPLETED', async () =
   });
   assert.equal(view.status, 200, 'Members may read the closeout record');
 });
+
+test('sectors: zone typing and sweep parameters return coverage metrics', async () => {
+  const searchId = await setupManagedSearch();
+  const square = {
+    type: 'Polygon',
+    coordinates: [[[73.0, 55.0], [73.009, 55.0], [73.009, 55.009], [73.0, 55.009], [73.0, 55.0]]],
+  };
+  const created = await fetch(`${base}/api/v1/searches/${searchId}/sectors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+    body: JSON.stringify({ code: 'F1', zoneType: 'FOOT_AREA', geometry: square, sweepParams: { laneWidthM: 20, speedKmh: 3.5, hours: 8 } }),
+  });
+  assert.equal(created.status, 200);
+  const sector = await created.json();
+  assert.equal(sector.zoneType, 'FOOT_AREA');
+  assert.ok(sector.metrics.areaSqM > 0, 'Area is computed from geometry');
+  assert.ok(sector.metrics.podPct > 0, 'POD is computed from sweep effort');
+
+  const coverage = await fetch(`${base}/api/v1/searches/${searchId}/coverage`, {
+    headers: { Authorization: `Bearer ${tokens.searcher}` },
+  });
+  assert.equal(coverage.status, 200);
+  const cov = await coverage.json();
+  assert.ok(cov.totalAreaSqM > 0, 'Aggregated area is positive');
+  assert.ok(cov.byType.FOOT_AREA.count >= 1, 'Coverage broken down by zone type');
+});
+
+test('sectors: invalid GeoJSON geometry is rejected', async () => {
+  const searchId = await setupManagedSearch();
+  const bad = await fetch(`${base}/api/v1/searches/${searchId}/sectors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.leader}` },
+    body: JSON.stringify({ code: 'BAD', zoneType: 'GENERIC', geometry: { type: 'Polygon', coordinates: [] } }),
+  });
+  assert.equal(bad.status, 400, 'Malformed geometry must be rejected');
+});
