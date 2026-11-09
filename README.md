@@ -112,9 +112,9 @@ RBAC должен проверяться **на сервере**, а не тол
 
 ### Desktop
 
-Desktop-клиент — основное рабочее место штаба и координаторов. Целевой клиент — **Tauri + React** (`desktop/`): это нативное приложение для Windows и Linux; поддержка macOS запланирована следующим этапом. CI проверяет сборку нативных пакетов Windows/Linux, но Mac-сборка пока не настроена.
+Desktop-клиент — основное рабочее место штаба и координаторов. Целевой стек — **Go/C + GTK4** (`rebuild/`). Его текущий локальный сценарий пока не подключён к серверной синхронизации.
 
-**Go/C + GTK4** (`rebuild/`) остаётся экспериментальным локальным прототипом: он пока не подключён к серверу и не является целевым клиентом.
+Старый **Tauri + React** (`desktop/`) сохранён как устаревающий эталон поведения и не является целевым клиентом.
 
 Предполагаемые рабочие разделы:
 
@@ -382,15 +382,14 @@ KuKLA проектируется как платформа, а не как од�
               REST / API       WebSocket        Sync/Snapshot
                     │               │               │
           ┌─────────┴──────────────┐   ┌──────────────┐
-          │ Tauri + React (target)  │   │ PostgreSQL   │
-          │ Windows / Linux now     │   │ authoritative │
+          │ Go/C + GTK4 (target)   │   │ PostgreSQL   │
+          │ local-only prototype   │   │ authoritative │
           └────────────────────────┘   └──────────────┘
                     │                         ▲
-                    └──── REST / API ─────────┘
+                    └──── sync not built ─────┘
 
-       macOS native packaging is planned for a later increment.
+       Legacy Tauri/React (`desktop/`) remains a behavior reference.
        Flutter is the field-client target; full offline sync is not complete.
-       Go/C + GTK (`rebuild/`) remains a disconnected local prototype.
 ```
 
 ---

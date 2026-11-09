@@ -1,12 +1,9 @@
 name: KuKLA CI
 
-# push checks every branch; pull_request adds checks for PRs targeting main/develop.
-# Push and PR events from the same head share a concurrency group below, so a
-# newer run cancels stale/duplicate work while preserving checks on the latest commit.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
-  cancel-in-progress: true
-
+# push: ['**'] — пайплайн гоняется на любой ветке, включая feature/* и qa/*.
+# Это нужно, чтобы каждую ветку плана видно было зелёной/красной до мержа в develop.
+# pull_request оставлен только для main/develop: иначе на ветку с открытым PR
+# приходилось бы по два запуска на каждый коммит (push + pull_request).
 on:
   push:
     branches: ['**']
@@ -88,21 +85,10 @@ jobs:
           done
           echo "server did not become ready in 30s" >&2
           exit 1
-      - name: Run server tests
-        run: npm test 2>&1 | tee server-test.log
+      - run: npm test
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
-      - name: Publish server test failure details
-        if: failure()
-        run: |
-          if [ -f server-test.log ]; then
-            echo '## Server test output' >> "$GITHUB_STEP_SUMMARY"
-            tail -n 250 server-test.log >> "$GITHUB_STEP_SUMMARY"
-            grep -A8 -B1 -E '^not ok|^# Subtest:|^  error:|^    Expected|^    Actual|^    at ' server-test.log | tail -n 60 | while IFS= read -r line; do
-              echo "::error title=Server test failure::$line"
-            done
-          fi
       - name: Show server log
         if: failure()
         run: cat server.log
@@ -121,66 +107,7 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
       - run: npm run check
-      - run: npm run test
       - run: npm run build
-
-  tauri-native:
-    name: Tauri native bundle (${{ matrix.platform }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Linux
-            os: ubuntu-latest
-            bundle: deb
-          - platform: Windows
-            os: windows-latest
-            bundle: msi
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: desktop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - name: Install Tauri Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libwebkit2gtk-4.1-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri -> desktop/src-tauri/target
-      - run: npm ci
-      - name: Build native Tauri bundle
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run tauri -- build --ci --bundles ${{ matrix.bundle }} 2>&1 | tee tauri-build.log
-      - name: Publish native build failure details
-        if: failure()
-        shell: bash
-        run: |
-          for logfile in tauri-build.log; do
-            if [ -f "$logfile" ]; then
-              echo "## $logfile" >> "$GITHUB_STEP_SUMMARY"
-              tail -n 150 "$logfile" >> "$GITHUB_STEP_SUMMARY"
-              context=$(grep -iE -B 6 -A 6 'error(\[[A-Z0-9]+\])?:|proc macro panicked|caused by|help: message|could not compile|failed to run|cannot find|not found|undefined reference' "$logfile" | tail -n 20 || true)
-              if [ -n "$context" ]; then
-                escaped=$(printf '%s' "$context" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')
-                echo "::error title=Native build context::$escaped"
-              else
-                tail -n 6 "$logfile" | while IFS= read -r line; do
-                  echo "::error title=Native build output::$line"
-                done
-              fi
-            fi
-          done
 
   rebuild-go:
     name: Go engine (${{ matrix.os }})

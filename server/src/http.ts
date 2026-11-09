@@ -43,14 +43,9 @@ async function searchExists(searchId: string, client?: PoolClient) {
 
 async function canAccessSearch(user: User, searchId: string, client?: PoolClient): Promise<boolean> {
   if (privilegedRoles.includes(user.role)) return true;
-  const directMembership = 'SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2';
-  // Regional managers receive access only when explicitly assigned to a search.
-  // Organization membership is not a substitute for a search-level grant.
-  const query = user.role === 'REGIONAL_MANAGER'
-    ? `${directMembership} LIMIT 1`
-    : `${directMembership}
-       UNION SELECT 1 FROM search_organizations so JOIN organization_members om ON om.organization_id=so.organization_id
-       WHERE so.search_id=$1 AND om.user_id=$2 AND om.active=true LIMIT 1`;
+  const query = `SELECT 1 FROM search_members WHERE search_id=$1 AND user_id=$2
+     UNION SELECT 1 FROM search_organizations so JOIN organization_members om ON om.organization_id=so.organization_id
+     WHERE so.search_id=$1 AND om.user_id=$2 AND om.active=true LIMIT 1`;
   const values = [searchId, user.id];
   const r = client ? await client.query(query, values) : await pool.query(query, values);
   return Boolean(r.rowCount);
@@ -66,75 +61,13 @@ export async function requireSearchAccess(req: FastifyRequest, searchId: string,
   if (!(await canAccessSearch(req.user, searchId, client))) throw httpErrors.notFound('Search not found');
 }
 
-export async function lockMutationActor(req: FastifyRequest, client: PoolClient, additionalUserIds: string[] = []) {
-  const session = await client.query(
-    `SELECT 1 FROM sessions
-     WHERE token_hash=$1 AND user_id=$2 AND expires_at>clock_timestamp()
-     FOR SHARE`,
-    [tokenHash(req), req.user.id],
-  );
-  if (!session.rowCount) throw httpErrors.unauthorized('Session expired or revoked');
-
-  // Use the same stable user-id order as PATCH /users, which locks actor and
-  // target together. This keeps concurrent role changes/deactivation ordered.
-  const ids = [...new Set([req.user.id, ...additionalUserIds])].sort();
-  const users = await client.query(
-    `SELECT id,role,active FROM users
-     WHERE id=ANY($1::uuid[]) ORDER BY id FOR SHARE`,
-    [ids],
-  );
-  const actor = users.rows.find((user) => user.id === req.user.id) as
-    { id: string; role: Role; active: boolean } | undefined;
-  if (!actor || !actor.active) throw httpErrors.unauthorized('Session expired or revoked');
-  req.user.role = actor.role;
-}
-
-async function lockSearchMutation(client: PoolClient, searchId: string) {
-  // Serialize mutations within one search so membership revocation and writes
-  // have a clear order. Every protected write rechecks access after this lock.
-  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`search:${searchId}`]);
-}
-
-async function requireCurrentSession(req: FastifyRequest, client: PoolClient) {
-  const session = await client.query(
-    `SELECT 1 FROM sessions
-     WHERE token_hash=$1 AND user_id=$2 AND expires_at>clock_timestamp()`,
-    [tokenHash(req), req.user.id],
-  );
-  if (!session.rowCount) throw httpErrors.unauthorized('Session expired or revoked');
-}
-
-export async function commitAuthorizedSearchTransaction(req: FastifyRequest, client: PoolClient) {
-  // Expiration is time-based (unlike logout, which is blocked by the session
-  // row lock), so check once more at the commit boundary.
-  await requireCurrentSession(req, client);
-  await client.query('COMMIT');
-}
-
-export const commitSearchMutation = commitAuthorizedSearchTransaction;
-
-export async function requireSearchWriteAccess(
-  req: FastifyRequest,
-  searchId: string,
-  client: PoolClient,
-  additionalUserIds: string[] = [],
-) {
-  await lockMutationActor(req, client, additionalUserIds);
-  await requireSearchAccess(req, searchId, client);
-  await lockSearchMutation(client, searchId);
-  // Revalidate after any lock wait. The session row and actor row are also held
-  // until transaction end so logout, role changes, and deactivation serialize.
-  await requireCurrentSession(req, client);
-  // Access may have been revoked while this request waited for the search lock.
-  await requireSearchAccess(req, searchId, client);
-}
-
-export async function requireSearchManagement(
-  req: FastifyRequest,
-  searchId: string,
-  client: PoolClient,
-  additionalUserIds: string[] = [],
-) {
-  await requireSearchWriteAccess(req, searchId, client, additionalUserIds);
+export async function requireSearchManagement(req: FastifyRequest, searchId: string) {
+  // Check membership before management role so foreign and missing search IDs
+  // stay indistinguishable on manager-only resource routes.
+  await requireSearchAccess(req, searchId);
   if (!managementRoles.includes(req.user.role)) throw httpErrors.forbidden('Search management permission required');
+}
+
+export async function audit(searchId: string | null, userId: string, type: string, payload: Record<string, unknown> = {}) {
+  await pool.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)', [searchId, userId, type, payload]);
 }

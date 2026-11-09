@@ -61,33 +61,6 @@ test('admin invitation is one-time, creates a session, and cannot be replayed', 
   assert.equal(replay.status, 400);
 });
 
-test('an authorized administrator can onboard a REGIONAL_MANAGER by one-time invitation', async () => {
-  const email = `regional-manager-${timestamp}@test.local`;
-  const created = await fetch(`${base}/api/v1/users/invitations`, {
-    method: 'POST',
-    headers: authHeaders(ownerToken),
-    body: JSON.stringify({ name: 'Regional Manager', email, role: 'REGIONAL_MANAGER' }),
-  });
-  assert.equal(created.status, 200);
-  const pending = await created.json();
-  assert.equal(pending.role, 'REGIONAL_MANAGER');
-  assert.ok(pending.token);
-
-  const accepted = await fetch(`${base}/api/v1/auth/accept-invitation`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: pending.token, password: 'regional-manager-pass-123' }),
-  });
-  assert.equal(accepted.status, 200);
-  const session = await accepted.json();
-  assert.equal(session.user.email, email);
-  assert.equal(session.user.role, 'REGIONAL_MANAGER');
-
-  const me = await fetch(`${base}/api/v1/me`, { headers: { Authorization: `Bearer ${session.token}` } });
-  assert.equal(me.status, 200);
-  assert.equal((await me.json()).role, 'REGIONAL_MANAGER');
-});
-
 test('concurrent acceptance of one invitation creates only one account and session', async () => {
   const email = `concurrent-${timestamp}@test.local`;
   const created = await fetch(`${base}/api/v1/users/invitations`, {
@@ -274,38 +247,6 @@ test('pending invitations can be revoked, and non-admins cannot manage them', as
     body: JSON.stringify({ token: pending.token, password: 'revoked-invite-password-123' }),
   });
   assert.equal(acceptance.status, 400);
-});
-
-test('REGIONAL_MANAGER cannot list, create, or revoke global invitations', async () => {
-  const email = `regional-no-invite-${timestamp}@test.local`;
-  const userId = await createTestUser('REGIONAL_MANAGER', email);
-  assert.ok(userId);
-  const token = await login(email, 'test-pass-123456');
-
-  const listed = await fetch(`${base}/api/v1/users/invitations`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  assert.equal(listed.status, 403);
-
-  const created = await fetch(`${base}/api/v1/users/invitations`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify({ name: 'Unauthorized Invite', email: `unauthorized-region-${timestamp}@test.local`, role: 'SEARCHER' }),
-  });
-  assert.equal(created.status, 403);
-
-  const pending = await fetch(`${base}/api/v1/users/invitations`, {
-    method: 'POST',
-    headers: authHeaders(ownerToken),
-    body: JSON.stringify({ name: 'Pending for revoke guard', email: `revoke-guard-${timestamp}@test.local`, role: 'SEARCHER' }),
-  });
-  assert.equal(pending.status, 200);
-  const invitation = await pending.json();
-  const revoked = await fetch(`${base}/api/v1/users/invitations/${invitation.id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  assert.equal(revoked.status, 403);
 });
 
 test('a SEARCHER cannot invite or assign elevated roles', async () => {

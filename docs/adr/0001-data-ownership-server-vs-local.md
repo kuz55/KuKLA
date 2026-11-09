@@ -5,8 +5,6 @@
 - **Решение принято:** владельцем проекта
 - **Влияет на:** `server/` (Fastify/TypeScript, PostgreSQL), `rebuild/` (Go/C desktop), `mobile/` (Flutter)
 
-> **Актуальность:** решение о составе desktop-клиентов в разделе 4 заменено [ADR-0002](0002-tauri-cross-platform-desktop.md). Остальные решения этого ADR продолжают действовать.
-
 ## Контекст
 
 В проекте исторически сложились две реализации одних и тех же данных:
@@ -49,10 +47,10 @@ VALUES ('local-installation', 'SEARCHER', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now
 
 Основанием для прав служат:
 
-1. **глобальная роль** пользователя (`SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `REGIONAL_MANAGER`, `SEARCHER`, `VIEWER`);
-2. **членство** в поисковой операции (`search_members`) или, для обычных непривилегированных ролей, в организации (`organization_members`) с учётом участия организации в операции (`search_organizations`). `REGIONAL_MANAGER` получает доступ только при прямом членстве в поиске; членства в организации недостаточно.
+1. **глобальная роль** пользователя (`SYSTEM_OWNER`, `SUPERADMIN`, `SUPERUSER`, `ADMIN`, `LEADER`, `COORDINATOR`, `SEARCHER`, `VIEWER`);
+2. **членство** в поисковой операции (`search_members`) или в организации (`organization_members`), с учётом участия организации в операции (`search_organizations`).
 
-Это соответствует серверной логике (`canAccessSearch`, `requireSearchAccess`, `requireSearchManagement` в `server/src/http.ts`). Роли определяют объём допустимых действий, членство определяет, к каким операциям эти действия применимы.
+Это соответствует уже работающей серверной логике (`canAccessSearch`, `requireSearchAccess`, `requireSearchManagement` в `server/src/http.ts`). Роли определяют объём допустимых действий, членство определяет, к каким операциям эти действия применимы.
 
 ### 4. Состав клиентов
 
@@ -89,9 +87,7 @@ Desktop-приложение не заменяет мобильный полев
 
 ### 7. Медицинские данные
 
-Медицинские заметки (поле `subjects.medical_notes`) **не включаются** до введения шифрования данных при хранении (SQLCipher для локальной БД, шифрование резервных копий).
-
-**Актуализация от 2026-11-04:** последующий manager-only Subject API/UI технически принимает и показывает это поле через онлайн-запросы к серверу. Это не отменяет исходный запрет на сбор реальных данных и не является privacy/security approval. Не вносить реальные subject/medical data до утверждения privacy/retention, проверки production storage и backup protections и operational audit. Офлайн-кэш медицинских заметок не реализован и не разрешён этим ADR; roadmap Subject остаётся PARTIAL.
+Медицинские заметки (поле `subjects.medical_notes`) **не включаются** до введения шифрования данных при хранении (SQLCipher для локальной БД, шифрование резервных копий). Соответствующие поля существуют в схеме, но не используются в API и интерфейсе до выполнения этого условия.
 
 ### 8. Доступ к трекам
 
