@@ -13,7 +13,7 @@ Legend:
 | Authentication | PARTIAL | harden secrets, sessions, rate limits, lifecycle |
 | RBAC | PARTIAL | resource-level authorization and organization scope |
 | Search lifecycle | DONE | formal incident model and transitions |
-| Subject profile | PARTIAL | management-only API/desktop slice exists; finish the workflow, privacy and retention decisions, broader test/production audit verification, and degraded-network behavior before marking complete |
+| Subject profile | MISSING | subject API/UI and privacy policy |
 | Organizations | MISSING | organization and membership model |
 | Operational periods | FOUNDATION | API, briefing/debriefing UI |
 | Teams | FOUNDATION | team API, membership and status workflows |
@@ -40,10 +40,6 @@ Legend:
 | Backup/restore | FOUNDATION | automated verification and recovery drills |
 | CI/CD | PARTIAL | unified GitHub Actions pipeline and mobile build |
 | Automated tests | PARTIAL | API, integration, mobile and sync tests |
-
-## Subject-profile completion gate
-
-The current slice provides search-manager-only subject list/create/update operations in the desktop search command view. API authorization and audit rollback are covered by local integration tests, but the roadmap item remains **PARTIAL**. Do not mark it complete until the end-to-end workflow and field acceptance scenario are reviewed, privacy/retention and deletion rules are approved, PostgreSQL/production audit and retention behavior is verified, adequate desktop and authorization test coverage is in place, and offline/degraded-network behavior has an explicit and tested decision. The slice intentionally excludes field/mobile access, photo upload, hard deletion, and offline use until those decisions exist; it is not operational rescue-coordination readiness.
 
 ## Implementation order
 

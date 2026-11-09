@@ -3,7 +3,7 @@ import { httpErrors } from '@fastify/sensible';
 import { z } from 'zod';
 import { managementRoles, privilegedRoles } from '../rbac.js';
 import { pool } from '../config.js';
-import { auth, commitSearchMutation, lockMutationActor, parseId, requireSearchAccess, requireSearchManagement, requireSearchWriteAccess } from '../http.js';
+import { auth, parseId, requireSearchAccess, requireSearchManagement } from '../http.js';
 
 const taskRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/searches/:id/tasks', { preHandler: auth }, async (req) => {
@@ -19,26 +19,19 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/api/v1/searches/:id/tasks', { preHandler: auth }, async (req) => {
     const searchId = parseId(req);
-    const parsed = z.object({
+    await requireSearchManagement(req, searchId);
+    const body = z.object({
       title: z.string().min(2),
       description: z.string().optional(),
       assigneeId: z.string().uuid().optional(),
       priority: z.number().int().min(1).max(3).default(2),
       lat: z.number().min(-90).max(90).optional(),
       lng: z.number().min(-180).max(180).optional(),
-    }).safeParse(req.body);
+    }).parse(req.body);
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await requireSearchManagement(
-        req,
-        searchId,
-        client,
-        parsed.success && parsed.data.assigneeId ? [parsed.data.assigneeId] : [],
-      );
-      if (!parsed.success) throw parsed.error;
-      const body = parsed.data;
       if (body.assigneeId) {
         const member = await client.query(
           `SELECT 1 FROM search_members sm JOIN users u ON u.id=sm.user_id
@@ -58,7 +51,7 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
         'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
         [searchId, req.user.id, 'TASK_CREATED', { taskId: task.id }],
       );
-      await commitSearchMutation(req, client);
+      await client.query('COMMIT');
       return task;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -80,14 +73,10 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Lock and refresh actor/session state before looking up the scoped task.
-      // Include a proposed assignee in the stable user-id lock order.
-      await lockMutationActor(req, client, body.assigneeId ? [body.assigneeId] : []);
-      // Filter this non-locking lookup so a task outside the user's searches is
-      // indistinguishable from a missing task. The row lock follows the common
-      // actor/session/search lock order to avoid a revocation-write deadlock.
-      const visible = await client.query(
-        `SELECT t.search_id FROM tasks t
+      // Filter authorization in the locking query so a task outside the user's
+      // searches is neither distinguishable from a missing task nor locked.
+      const current = await client.query(
+        `SELECT t.* FROM tasks t
          WHERE t.id=$1
            AND (
              $2::boolean
@@ -100,20 +89,9 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
                JOIN organization_members om ON om.organization_id=so.organization_id
                WHERE so.search_id=t.search_id AND om.user_id=$3 AND om.active=true
              )
-           )`,
+           )
+         FOR UPDATE OF t`,
         [id, privilegedRoles.includes(req.user.role), req.user.id],
-      );
-      if (!visible.rowCount) throw httpErrors.notFound('Task not found');
-      const searchId = visible.rows[0].search_id as string;
-      await requireSearchWriteAccess(
-        req,
-        searchId,
-        client,
-        body.assigneeId ? [body.assigneeId] : [],
-      );
-      const current = await client.query(
-        'SELECT t.* FROM tasks t WHERE t.id=$1 AND t.search_id=$2 FOR UPDATE OF t',
-        [id, searchId],
       );
       if (!current.rowCount) throw httpErrors.notFound('Task not found');
       const task = current.rows[0];
@@ -161,7 +139,7 @@ const taskRoutes: FastifyPluginAsync = async (app) => {
         'INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',
         [task.search_id, req.user.id, 'TASK_UPDATED', { taskId: id, changes: body }],
       );
-      await commitSearchMutation(req, client);
+      await client.query('COMMIT');
       return result.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');

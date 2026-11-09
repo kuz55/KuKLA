@@ -46,7 +46,7 @@ npm run build
 npm run tauri build
 ```
 
-The packaged Tauri client defaults to the local Compose API at `http://localhost:18080/api/v1`; override it with `VITE_API_URL` when building against another server. In Vite development mode, the client uses relative `/api/v1` requests and the dev server proxies them to `VITE_DEV_API_TARGET` (default `http://127.0.0.1:18080`), so browser requests stay same-origin.
+The local Compose API default is `http://localhost:18080/api/v1`; override it with `VITE_API_URL` when building against another server.
 
 ## Mobile: Flutter
 
