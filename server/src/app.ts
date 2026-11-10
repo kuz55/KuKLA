@@ -13,6 +13,9 @@ import taskRoutes from './routes/tasks.js';
 import eventRoutes from './routes/events.js';
 import gpsRoutes from './routes/gps.js';
 import wsRoutes from './routes/ws.js';
+import intakeRoutes from './routes/intake.js';
+import coordinationRoutes from './routes/coordination.js';
+import fieldLeadRoutes from './routes/field-lead.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
 export async function buildApp() {
@@ -82,6 +85,17 @@ export async function buildApp() {
   await app.register(eventRoutes);
   await app.register(gpsRoutes);
   await app.register(wsRoutes);
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_INTAKE === 'true') {
+    await app.register(intakeRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_COORDINATION === 'true') {
+    await app.register(coordinationRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD === 'true') {
+    await app.register(fieldLeadRoutes);
+  }
 
   return app;
 }

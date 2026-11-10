@@ -51,14 +51,18 @@ async function canAccessSearch(user: User, searchId: string, client?: PoolClient
   return Boolean(r.rowCount);
 }
 
-export async function requireSearchAccess(req: FastifyRequest, searchId: string, client?: PoolClient) {
+export async function requireSearchAccessForUser(user: User, searchId: string, client?: PoolClient) {
   // Do not check existence separately for non-privileged users: both a missing
   // search and a search outside their membership must return the same 404.
-  if (privilegedRoles.includes(req.user.role)) {
+  if (privilegedRoles.includes(user.role)) {
     await searchExists(searchId, client);
     return;
   }
-  if (!(await canAccessSearch(req.user, searchId, client))) throw httpErrors.notFound('Search not found');
+  if (!(await canAccessSearch(user, searchId, client))) throw httpErrors.notFound('Search not found');
+}
+
+export async function requireSearchAccess(req: FastifyRequest, searchId: string, client?: PoolClient) {
+  return requireSearchAccessForUser(req.user, searchId, client);
 }
 
 export async function requireSearchManagement(req: FastifyRequest, searchId: string) {
