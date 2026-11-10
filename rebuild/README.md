@@ -55,7 +55,7 @@ Run the local engine on Linux:
 ./build/kukla-ui
 ```
 
-The UI starts a per-window Go engine instance and closes it when the window exits. The engine uses a private Unix socket or a named pipe restricted to the current owner-rights SID; it does not open TCP ports. The API is local to this desktop process and does not yet provide application-user authentication or roles.
+The UI starts a per-window Go engine instance and closes it when the window exits. The engine uses a private Unix socket or a named pipe restricted to the current owner-rights SID; it does not open TCP ports. The local API does not enforce server identity or roles on local data. The experimental server sign-in is separate from that workflow.
 
 The first workflow creates a search with status `PLANNED`; the local installation is added as a member and a `SEARCH_CREATED` audit event is written in the same transaction. The search and questionnaire survive application restarts in local SQLite. Saving a profile requires explicit consent and clears its review flag. Role names and assignment policy are defined and tested, but there is intentionally no role-changing endpoint or UI until server authentication can identify and authorize the actor.
 
@@ -94,7 +94,7 @@ To build the same package on Windows:
    Compress-Archive -Path build/windows/KuKLA/* -DestinationPath build/KuKLA-windows-x64.zip
    ```
 
-This client is currently **local only**: there is no server authentication or synchronization, map renderer, task/group workflow, or encryption at rest. Operations and the questionnaire stay on this Windows account. Do not rely on it for real rescue operations without further validation.
+The operations workflow is currently **local only**: server sign-in is experimental and does not provide synchronization, map rendering, task/group workflow, or encryption at rest. Operations and the questionnaire stay on this Windows account. Do not rely on it for real rescue operations without further validation.
 
 ## Data paths
 
