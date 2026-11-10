@@ -123,9 +123,15 @@ following authenticated endpoints (all responses are `no-store`):
   coordinator can remove the current lead, and the reason is audited.
 
 Transitions, search locking and audit are transactional. This is an incomplete
-foundation: there are no appointment notifications, ten-minute timer, delivery,
-UI, administrative grants, proposal cancellation, idempotent acceptance or
-access integration with groups/tasks. Pending proposals to unavailable or
-ineligible candidates can therefore get stuck. There is no verified check that
+foundation: delivery, UI, administrative grants and access integration with groups/tasks are missing. Pending proposals to unavailable or ineligible candidates require manual cancellation. There is no verified check that
 an exception is warranted; the responsible coordinator supplies the reason.
 Do not use for real operations. No real personal data should be entered.
+
+
+## Field-lead retries and notifications (experimental)
+
+Migrations 017–019 add acceptance receipts, a private event inbox and a best-effort reminder worker. Acceptance retries return the original historical receipt and do not restore an old assignment. A registrar or assigned eligible coordinator can cancel a pending proposal with a reason through `POST /api/v1/field-lead/searches/:id/proposals/cancel` (`proposalId`, `reason`); the current lead is unaffected.
+
+`GET /api/v1/field-lead/notifications` and `POST /api/v1/field-lead/notifications/:id/acknowledge` provide private cursor-paginated unread events and idempotent acknowledgement. Candidate eligibility or manager rights are rechecked on reads. The inbox contains IDs and types, never report details or reasons. Proposal, acceptance, decline and cancellation notifications are written transactionally with their respective changes. Acceptance and decline notify the proposer, assigned coordinators and active registrars who resolved linked reports. If a search has no linked report and was proposed by a coordinator, there is no reliable designated registrar to notify.
+
+When the experimental field-lead API is enabled outside production, a worker polls every 30 seconds for proposals unanswered for at least ten minutes and records `NO_RESPONSE` events in the inbox. The reminder is recorded once per proposal with its marker in one transaction; a failure rolls back and can be retried. Execution depends on a running server and database, and may be delayed after outages or backlog. An inbox entry is not push delivery, proof of reading or a guarantee that an active registrar received it. Entries can become stale; clients must query current state. There is no delivery UI, agreed registrar assignment model, full notification escalation, production deployment or security audit. Never use with real personal data.

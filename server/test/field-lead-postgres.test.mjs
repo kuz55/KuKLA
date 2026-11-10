@@ -36,12 +36,44 @@ test('field lead assignment and replacement require acceptance and record except
     assert.equal((await service.pending(first,searchId)).id, proposal.proposalId);
     await assert.rejects(service.accept(second,searchId,proposal.proposalId), {statusCode:404});
     assert.equal((await pool.query('SELECT count(*)::int n FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].n, 0);
-    await service.accept(first,searchId,proposal.proposalId);
-    await assert.rejects(service.accept(first,searchId,proposal.proposalId), {statusCode:404});
+    assert.equal(await service.processOverdueReminders(),0);
+    await pool.query("UPDATE field_lead_proposals SET created_at=now()-interval '11 minutes' WHERE id=$1",[proposal.proposalId]);
+    const failNotifications = { connect: async () => {
+      const client = await pool.connect();
+      return { release: () => client.release(), query: (sql, values) => {
+        if (sql.startsWith('INSERT INTO field_lead_notifications')) throw new Error('inbox unavailable');
+        return client.query(sql,values);
+      } };
+    }, query: (...args) => pool.query(...args) };
+    await assert.rejects(new FieldLeadService(failNotifications).processOverdueReminders(), /inbox unavailable/);
+    assert.equal((await pool.query('SELECT reminder_created_at FROM field_lead_proposals WHERE id=$1',[proposal.proposalId])).rows[0].reminder_created_at,null);
+    const reminders = await Promise.all([service.processOverdueReminders(),service.processOverdueReminders()]);
+    assert.equal(reminders.reduce((a,b)=>a+b,0),1);
+    assert.ok((await service.notifications(registrar)).items.some(n=>n.kind==='NO_RESPONSE' && n.proposal_id===proposal.proposalId));
+    assert.ok((await service.notifications(coordinator)).items.some(n=>n.kind==='NO_RESPONSE' && n.proposal_id===proposal.proposalId));
+    const inbox = await service.notifications(first);
+    assert.equal(inbox.items[0].proposal_id,proposal.proposalId);
+    await assert.rejects(service.acknowledge(outsider,inbox.items[0].id), {statusCode:404});
+    await pool.query('DELETE FROM field_lead_eligibility WHERE user_id=$1',[first]);
+    assert.equal((await service.notifications(first)).items.length,0);
+    await pool.query('INSERT INTO field_lead_eligibility(user_id) VALUES($1)',[first]);
+    const ack = await service.acknowledge(first,inbox.items[0].id);
+    assert.deepEqual(await service.acknowledge(first,inbox.items[0].id),ack);
+    const accepted = await Promise.all(Array.from({length:4},()=>service.accept(first,searchId,proposal.proposalId)));
+    assert.ok(accepted.every(x=>+x.acceptedAt===+accepted[0].acceptedAt));
+    assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE search_id=$1 AND type='FIELD_LEAD_ACCEPTED'",[searchId])).rows[0].n,1);
+    assert.ok((await service.notifications(registrar)).items.some(n=>n.kind==='ACCEPTED' && n.proposal_id===proposal.proposalId));
     const replacement = await service.propose(coordinator,searchId,second);
     assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id, first);
     await service.decline(second,searchId,replacement.proposalId);
     assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id, first);
+    const cancelled = await service.propose(registrar,searchId,second);
+    await assert.rejects(service.cancel(outsider,searchId,cancelled.proposalId,'No response'), {statusCode:403});
+    await service.cancel(coordinator,searchId,cancelled.proposalId,'No response');
+    await assert.rejects(service.accept(second,searchId,cancelled.proposalId), {statusCode:404});
+    const notifications = await service.notifications(second);
+    assert.ok(notifications.items.some(n=>n.kind==='CANCELLED' && n.proposal_id===cancelled.proposalId));
+    assert.equal(JSON.stringify(notifications).includes('No response'),false);
     const next = await service.propose(registrar,searchId,second);
     await assert.rejects(service.accept(second,searchId,replacement.proposalId), {statusCode:404});
     await pool.query('DELETE FROM field_lead_eligibility WHERE user_id=$1',[second]);
@@ -49,6 +81,8 @@ test('field lead assignment and replacement require acceptance and record except
     assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id, first);
     await pool.query('INSERT INTO field_lead_eligibility(user_id) VALUES($1)',[second]);
     await service.accept(second,searchId,next.proposalId);
+    assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id, second);
+    await service.accept(first,searchId,proposal.proposalId);
     assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id, second);
     await assert.rejects(service.remove(outsider,searchId,'Unavailable'), {statusCode:403});
     await service.remove(coordinator,searchId,'Unavailable');
@@ -88,6 +122,11 @@ test('field-lead HTTP authentication, validation and production gate', async () 
     const res = await call('POST','/proposals',registrar,{candidateId:candidate});
     assert.equal(res.statusCode,200);
     assert.equal(res.headers['cache-control'],'no-store');
+    const inbox = await app.inject({method:'GET',url:'/api/v1/field-lead/notifications',headers:{authorization:`Bearer ${tokens.get(candidate)}`}});
+    assert.equal(inbox.statusCode,200);
+    assert.equal(inbox.json().items[0].proposal_id,res.json().proposalId);
+    const ack = await app.inject({method:'POST',url:`/api/v1/field-lead/notifications/${inbox.json().items[0].id}/acknowledge`,headers:{authorization:`Bearer ${tokens.get(candidate)}`}});
+    assert.equal(ack.statusCode,200);
     assert.equal((await call('POST','/proposals/accept',candidate,{proposalId:res.json().proposalId})).statusCode,200);
     assert.equal((await call('POST','/exceptional-removal',registrar,{reason:' '})).statusCode,400);
   } finally {
