@@ -46,7 +46,7 @@ make build-engine-windows
 make build-ui
 ```
 
-On Ubuntu, install `build-essential`, `make`, `pkg-config`, `libgtk-4-dev`, and `libjson-glib-dev`. On Windows, use an MSYS2 UCRT64 environment with GTK4, JSON-GLib, GCC, `make`, and `pkgconf`. The CI workflow tests the Go engine on Windows and Linux, builds the GTK client on both platforms, and stages a portable Windows runtime bundle. GitHub Actions publishes the ZIP as a 14-day build artifact; it is not a signed installer.
+On Ubuntu, install `build-essential`, `make`, `pkg-config`, `libgtk-4-dev`, and `libjson-glib-dev`. The CI workflow tests the Go engine on Windows and Linux and builds the GTK client on both platforms. See below for the portable Windows package.
 
 Run the local engine on Linux:
 
@@ -59,6 +59,43 @@ The UI starts a per-window Go engine instance and closes it when the window exit
 
 The first workflow creates a search with status `PLANNED`; the local installation is added as a member and a `SEARCH_CREATED` audit event is written in the same transaction. The search and questionnaire survive application restarts in local SQLite. Saving a profile requires explicit consent and clears its review flag. Role names and assignment policy are defined and tested, but there is intentionally no role-changing endpoint or UI until phone authentication can identify and authorize the actor.
 
+## Portable Windows x64
+
+The [CI workflow](https://github.com/kuz55/KuKLA/actions/workflows/ci.yml) publishes **KuKLA-windows-x64** on successful runs. Open a run and download its artifact (GitHub sign-in may be required); Actions retains it for 30 days. Extract the entire ZIP and double-click `KuKLA.exe`. GTK and Go are included; there is no need to install them on the target PC. Windows 10/11 x64 is the intended target. The package is unsigned and is not an installer, so Windows may show an unknown-publisher warning. Only use builds from a source you trust.
+
+The Windows CI smoke test extracts the package to a path with spaces and Cyrillic, removes MSYS2 from `PATH`, launches the UI and engine, creates an operation and a profile, then restarts the app to check persistence and orderly shutdown. It does not constitute field acceptance or a security audit.
+
+To build the same package on Windows:
+
+1. Install the Go version from `go.mod` and MSYS2. In an **MSYS2 UCRT64** shell install the build/runtime packages:
+
+   ```sh
+   pacman -S --needed make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gtk4 \
+     mingw-w64-ucrt-x86_64-json-glib mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-ntldd
+   ```
+
+2. In PowerShell, from the repository root, build the engine:
+
+   ```powershell
+   cd rebuild
+   go build -trimpath -ldflags='-s -w -H=windowsgui' -o build/kukla-engine.exe ./cmd/kukla-engine
+   ```
+
+3. In the UCRT64 shell, from `rebuild/`, build the UI and stage the package:
+
+   ```sh
+   make UI_NAME=kukla-ui.exe UI_LDFLAGS=-mwindows build-ui
+   bash ../.github/scripts/package-windows.sh
+   ```
+
+4. The portable directory is `rebuild/build/windows/KuKLA`. To make a ZIP in PowerShell, from `rebuild/`:
+
+   ```powershell
+   Compress-Archive -Path build/windows/KuKLA/* -DestinationPath build/KuKLA-windows-x64.zip
+   ```
+
+This client is currently **local only**: there is no server authentication or synchronization, map renderer, task/group workflow, or encryption at rest. Operations and the questionnaire stay on this Windows account. Do not rely on it for real rescue operations without further validation.
+
 ## Data paths
 
 Linux:
@@ -69,4 +106,4 @@ Linux:
 - cache: `~/.cache/kukla/`
 - logs/state: `~/.local/state/kukla/`
 
-Windows data files are stored below `%LOCALAPPDATA%\KuKLA`; credential storage, database encryption, and installer signing remain follow-on tasks. The portable Windows package is staged under `rebuild/build/windows/KuKLA` and launched with `KuKLA.cmd`.
+Windows configuration is stored below `%APPDATA%\KuKLA`, and the local database is `%LOCALAPPDATA%\KuKLA\Data\db\kukla.sqlite`. Removing the application directory does not remove the database. Credential storage, database encryption, and installer signing remain follow-on tasks.

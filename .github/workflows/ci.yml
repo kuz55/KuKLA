@@ -5,6 +5,7 @@ name: KuKLA CI
 # pull_request оставлен только для main/develop: иначе на ветку с открытым PR
 # приходилось бы по два запуска на каждый коммит (push + pull_request).
 on:
+  workflow_dispatch:
   push:
     branches: ['**']
     tags-ignore: ['**']
@@ -139,6 +140,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y build-essential make pkg-config libgtk-4-dev libjson-glib-dev
+      - name: Test Windows packaging layout
+        run: bash .github/scripts/test-package-windows.sh
       - name: Compile GTK client
         working-directory: rebuild
         run: make build-ui
@@ -166,22 +169,46 @@ jobs:
       - name: Build desktop binaries
         working-directory: rebuild
         shell: pwsh
-        run: go build -trimpath -ldflags='-s -w' -o build/kukla-engine.exe ./cmd/kukla-engine
+        run: go build -trimpath -ldflags='-s -w -H=windowsgui' -o build/kukla-engine.exe ./cmd/kukla-engine
       - name: Build GTK desktop UI
         working-directory: rebuild
         shell: msys2 {0}
-        run: make UI_NAME=kukla-ui.exe build-ui
+        run: |
+          set -o pipefail
+          log="$(cygpath -u "$RUNNER_TEMP")/kukla-ui-build.log"
+          if ! make UI_NAME=kukla-ui.exe UI_LDFLAGS=-mwindows build-ui 2>&1 | tee "$log"; then
+            echo "::error title=Windows UI build failed::$(tail -n 12 "$log" | tr '\n' ' ')"
+            exit 1
+          fi
       - name: Bundle GTK runtime and create portable package
         working-directory: rebuild
         shell: msys2 {0}
-        run: bash ../.github/scripts/package-windows.sh
+        run: |
+          set -o pipefail
+          log="$(cygpath -u "$RUNNER_TEMP")/kukla-package.log"
+          if ! bash ../.github/scripts/package-windows.sh 2>&1 | tee "$log"; then
+            echo "::error title=Windows packaging failed::$(tail -n 12 "$log" | tr '\n' ' ')"
+            exit 1
+          fi
       - name: Create ZIP archive
         shell: pwsh
         working-directory: rebuild
         run: Compress-Archive -Path build/windows/KuKLA/* -DestinationPath build/KuKLA-windows-x64.zip -CompressionLevel Optimal
+      - name: Smoke-test the extracted package without MSYS2 on PATH
+        shell: pwsh
+        working-directory: rebuild
+        run: |
+          try {
+            & ../.github/scripts/test-windows-package.ps1 -PackageZip build/KuKLA-windows-x64.zip
+          } catch {
+            $detail = "$($_.Exception.Message) $($_.ScriptStackTrace)" -replace '[\r\n]+', ' '
+            Write-Output "::error title=Windows package smoke test failed::$detail"
+            throw
+          }
+      # Upload the directory, so the Actions download is one ZIP rather than a ZIP inside a ZIP.
       - uses: actions/upload-artifact@v4
         with:
           name: KuKLA-windows-x64
-          path: rebuild/build/KuKLA-windows-x64.zip
+          path: rebuild/build/windows/KuKLA/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30

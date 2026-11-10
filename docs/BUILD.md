@@ -34,6 +34,10 @@ make build-ui
 
 The current desktop workflow persists locally in SQLite. It does not yet authenticate to or synchronize with the server.
 
+### Windows x64 package
+
+The [Windows build instructions](../rebuild/README.md#portable-windows-x64) describe the Go + MSYS2 UCRT64 prerequisites and packaging commands. A successful GitHub Actions run publishes the portable `KuKLA-windows-x64` artifact for 30 days. Extract it completely and launch `KuKLA.exe`; the package includes the GTK runtime and does not require a separate GTK installation. The build is unsigned, local-only, and its database is not encrypted.
+
 ## Legacy desktop: Tauri + React
 
 `desktop/` is deprecated and retained as a behavior reference. Build the frontend with Node.js 22+; a native package also requires Rust and Tauri's platform dependencies:

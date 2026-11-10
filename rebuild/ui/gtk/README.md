@@ -9,6 +9,6 @@ The operations page starts a Go engine next to the UI binary and communicates ov
 - `pkg-config`
 - JSON-GLib development headers and library
 
-Build the engine and UI into the same `build/` directory so the UI can launch the engine. Run `make build-engine build-ui` from `rebuild/`. CI compiles the Linux UI and creates a Windows portable ZIP containing the GTK runtime and third-party notices. The ZIP is a test artifact, not a signed installer.
+Build the engine and UI into the same `build/` directory so the UI can launch the engine. Run `make build-engine build-ui` from `rebuild/`. CI compiles the Linux UI and creates a Windows portable ZIP containing the GTK runtime and third-party notices. The ZIP is a test artifact, not a signed installer. Extract it fully and launch `KuKLA.exe`; see the [Windows build instructions](../../README.md#portable-windows-x64).
 
 The map panel is an empty-state page until the later WebView adapter is implemented: WebKitGTK on Linux, WebView2 on Windows. Both must load bundled/local resources only.
