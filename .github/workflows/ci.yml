@@ -40,6 +40,14 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - name: Test LAN certificate setup
+        run: bash ../infrastructure/lan-test/test-init.sh
+      - name: Validate isolated LAN Compose config
+        run: docker compose -f ../infrastructure/lan-test/compose.yml config --quiet
+        env:
+          KUKLA_LAN_IP: 192.168.77.10
+          POSTGRES_PASSWORD: test-only-value
+          JWT_SECRET: test-only-value
       - run: npm run lint
       - run: npm run build
       - run: npm run migrate

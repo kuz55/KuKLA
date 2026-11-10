@@ -1,0 +1,48 @@
+# TEST DATA ONLY. Run inside an isolated Linux VM, not on the TrueNAS host.
+# Do not forward this port on the router or expose this deployment to Internet.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kukla
+      POSTGRES_USER: kukla
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Initialize .env first}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kukla -d kukla"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+  server:
+    build: ../../server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://kukla:${POSTGRES_PASSWORD:?Initialize .env first}@postgres:5432/kukla
+      JWT_SECRET: ${JWT_SECRET:?Initialize .env first}
+      CORS_ORIGIN: tauri://localhost
+      ALLOW_PUBLIC_REGISTRATION: 'false'
+      TRUST_PROXY: ''
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [backend]
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${KUKLA_LAN_IP:?Initialize .env first}:18443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./private/server.crt:/etc/nginx/certs/server.crt:ro
+      - ./private/server.key:/etc/nginx/certs/server.key:ro
+    depends_on: [server]
+    networks: [backend]
+networks:
+  backend:
+    internal: true
+volumes:
+  postgres_data:
