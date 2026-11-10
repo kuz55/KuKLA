@@ -16,7 +16,7 @@ Implemented in this increment:
 - the eight role identifiers and tested role-management policy matching the existing server contract;
 - C/GTK4 desktop screens that start the Go engine, create/list local operations, and edit the local questionnaire.
 
-Not implemented yet: server sign-in, authenticated role assignment and review, task/group APIs and screens, map renderer/offline map packages, request intake, media pipeline, notifications, sync, backup/restore, and database encryption. The roles endpoint is a catalog, not an authorization boundary; authenticated user identity is required before role assignment can be enabled. Medical notes are deliberately excluded until encryption at rest is implemented. The profile is local to the current OS account and its database is not encrypted.
+Not implemented yet: integration of server sign-in with the workflow, authenticated role assignment and review, task/group APIs and screens, map renderer/offline map packages, request intake, media pipeline, notifications, sync, backup/restore, and database encryption. The roles endpoint is a catalog, not an authorization boundary; authenticated user identity is required before role assignment can be enabled. Medical notes are deliberately excluded until encryption at rest is implemented. The profile is local to the current OS account and its database is not encrypted.
 
 ## Project layout
 
@@ -107,3 +107,10 @@ Linux:
 - logs/state: `~/.local/state/kukla/`
 
 Windows configuration is stored below `%APPDATA%\KuKLA`, and the local database is `%LOCALAPPDATA%\KuKLA\Data\db\kukla.sqlite`. Removing the application directory does not remove the database. Credential storage, database encryption, and installer signing remain follow-on tasks.
+
+
+## Experimental server sign-in
+
+The desktop has an experimental **Вход на сервер** page. It accepts an HTTPS origin without a path; plaintext HTTP is allowed only for a numeric loopback address on the same computer (for example `http://127.0.0.1:18080`). A valid certificate trusted by the operating system is required for HTTPS, including local-network servers. The client does not disable TLS verification, follow redirects, or send login credentials via environment-configured proxies. Use synthetic test accounts only. The session is held in the engine's memory, not persisted; closing the application clears local memory but does not revoke the server session. Explicit logout attempts revocation, and reports if the server could not confirm it.
+
+**This does not protect or synchronize local operations or profiles.** The local SQLite prototype is still accessible without server sign-in and is unencrypted. The current server login alone does not mean the full workflow is ready or safe for real searches. Server address configuration is not persisted and no offline login is implemented. Network operations may briefly block the UI while the request times out.

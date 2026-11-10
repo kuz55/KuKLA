@@ -16,6 +16,7 @@ import (
 	"github.com/kuz55/KuKLA/rebuild/internal/httpapi"
 	"github.com/kuz55/KuKLA/rebuild/internal/ipc"
 	"github.com/kuz55/KuKLA/rebuild/internal/platform"
+	"github.com/kuz55/KuKLA/rebuild/internal/remoteauth"
 	"github.com/kuz55/KuKLA/rebuild/internal/storage/sqlite"
 )
 
@@ -72,7 +73,7 @@ func run() error {
 	serverContext, stopServer := context.WithCancel(context.Background())
 	defer stopServer()
 	server := &http.Server{
-		Handler:           httpapi.NewHandler(version, searches, profiles, domain.ID("local-installation"), stopServer),
+		Handler:           httpapi.NewHandler(version, searches, profiles, domain.ID("local-installation"), stopServer, remoteauth.New()),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
