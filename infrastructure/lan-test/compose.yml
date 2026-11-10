@@ -40,8 +40,10 @@ services:
       - ./private/server.crt:/etc/nginx/certs/server.crt:ro
       - ./private/server.key:/etc/nginx/certs/server.key:ro
     depends_on: [server]
-    networks: [backend]
+    networks: [frontend, backend]
 networks:
+  frontend:
+    driver: bridge
   backend:
     internal: true
 volumes:
