@@ -16,7 +16,7 @@ Implemented in this increment:
 - the eight role identifiers and tested role-management policy matching the existing server contract;
 - C/GTK4 desktop screens that start the Go engine, create/list local operations, and edit the local questionnaire.
 
-Not implemented yet: phone/SMS sign-in, authenticated role assignment and review, task/group APIs and screens, map renderer/offline map packages, request intake, media pipeline, notifications, sync, backup/restore, and database encryption. The roles endpoint is a catalog, not an authorization boundary; authenticated user identity is required before role assignment can be enabled. Medical notes are deliberately excluded until encryption at rest is implemented. The profile is local to the current OS account and its database is not encrypted.
+Not implemented yet: server sign-in, authenticated role assignment and review, task/group APIs and screens, map renderer/offline map packages, request intake, media pipeline, notifications, sync, backup/restore, and database encryption. The roles endpoint is a catalog, not an authorization boundary; authenticated user identity is required before role assignment can be enabled. Medical notes are deliberately excluded until encryption at rest is implemented. The profile is local to the current OS account and its database is not encrypted.
 
 ## Project layout
 
@@ -57,7 +57,7 @@ Run the local engine on Linux:
 
 The UI starts a per-window Go engine instance and closes it when the window exits. The engine uses a private Unix socket or a named pipe restricted to the current owner-rights SID; it does not open TCP ports. The API is local to this desktop process and does not yet provide application-user authentication or roles.
 
-The first workflow creates a search with status `PLANNED`; the local installation is added as a member and a `SEARCH_CREATED` audit event is written in the same transaction. The search and questionnaire survive application restarts in local SQLite. Saving a profile requires explicit consent and clears its review flag. Role names and assignment policy are defined and tested, but there is intentionally no role-changing endpoint or UI until phone authentication can identify and authorize the actor.
+The first workflow creates a search with status `PLANNED`; the local installation is added as a member and a `SEARCH_CREATED` audit event is written in the same transaction. The search and questionnaire survive application restarts in local SQLite. Saving a profile requires explicit consent and clears its review flag. Role names and assignment policy are defined and tested, but there is intentionally no role-changing endpoint or UI until server authentication can identify and authorize the actor.
 
 ## Portable Windows x64
 

@@ -318,7 +318,7 @@ static void refresh_roles(AppState *state) {
 }
 
 static GtkWidget *make_roles_page(AppState *state) {
-    GtkWidget *page = make_page("Роли доступа", "Список соответствует существующей серверной модели KuKLA. До подключения SMS-входа и полномочий назначение ролей намеренно недоступно.");
+    GtkWidget *page = make_page("Роли доступа", "Список соответствует существующей серверной модели KuKLA. До подключения входа и полномочий назначение ролей намеренно недоступно.");
     GtkWidget *view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);

@@ -38,13 +38,11 @@ const withDatabase = async (database, callback) => {
 };
 
 const recreateDb = async (database) => {
-  await maintenancePool.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1', [database]);
   await maintenancePool.query(`DROP DATABASE IF EXISTS ${database}`);
   await maintenancePool.query(`CREATE DATABASE ${database}`);
 };
 
 const dropDb = async (database) => {
-  await maintenancePool.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1', [database]);
   await maintenancePool.query(`DROP DATABASE IF EXISTS ${database}`);
 };
 
@@ -68,18 +66,32 @@ test('migrations: re-run on already migrated dev DB is a no-op (idempotency)', (
   assert.doesNotMatch(result.stdout, /Applied /);
 });
 
-test('migrations: clean DB applies all 9 migrations, schema complete, second run no-op', async () => {
+test('migrations: clean DB applies all 16 migrations, schema complete, second run no-op', async () => {
   await recreateDb(TEST_DB);
   try {
     const first = runMigrate(serverDir, dbUrl(TEST_DB));
     assert.equal(first.status, 0, first.stderr);
-    assert.equal((first.stdout.match(/Applied /g) || []).length, 9, 'expected exactly 9 applied migrations on clean DB');
+    assert.equal((first.stdout.match(/Applied /g) || []).length, 16, 'expected exactly 16 applied migrations on clean DB');
 
     await withDatabase(TEST_DB, async (pool) => {
       const migrations = await pool.query('SELECT count(*)::int AS count FROM schema_migrations');
-      assert.equal(migrations.rows[0].count, 9);
+      assert.equal(migrations.rows[0].count, 16);
       const tables = await pool.query("SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'");
-      assert.equal(tables.rows[0].count, 31, 'expected 31 public tables after full migration');
+      assert.equal(tables.rows[0].count, 41, 'expected 41 public tables after full migration');
+      // Unknown values are allowed, but every record needs a real author and
+      // known fields cannot consist only of spaces. No contact data in logs.
+      const author = await pool.query(
+        "INSERT INTO users(name,email,password_hash,role) VALUES('Intake test','intake-migration-test@example.invalid','hash','VIEWER') RETURNING id",
+      );
+      const row = await pool.query(
+        'INSERT INTO initial_reports(recorded_by) VALUES ($1) RETURNING id, received_at, applicant_name',
+        [author.rows[0].id],
+      );
+      assert.ok(row.rows[0].id);
+      assert.ok(row.rows[0].received_at instanceof Date);
+      assert.equal(row.rows[0].applicant_name, null);
+      await assert.rejects(pool.query('INSERT INTO initial_reports(recorded_by, applicant_name) VALUES ($1, $2)', [author.rows[0].id, '   ']), { code: '23514' });
+      await assert.rejects(pool.query('INSERT INTO initial_reports(recorded_by) VALUES ($1)', ['00000000-0000-0000-0000-000000000001']), { code: '23503' });
     });
 
     const second = runMigrate(serverDir, dbUrl(TEST_DB));
@@ -96,7 +108,7 @@ test('migrations: dry-run reports pending migrations without applying them', asy
   try {
     const dry = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
     assert.equal(dry.status, 0, dry.stderr);
-    assert.equal((dry.stdout.match(/Pending /g) || []).length, 9, 'dry-run should list all 9 migrations as pending');
+    assert.equal((dry.stdout.match(/Pending /g) || []).length, 16, 'dry-run should list all 16 migrations as pending');
     assert.doesNotMatch(dry.stdout, /Applied /);
     assert.match(dry.stdout, /would be applied/);
 
@@ -107,7 +119,7 @@ test('migrations: dry-run reports pending migrations without applying them', asy
 
     const applied = runMigrate(serverDir, dbUrl(TEST_DB));
     assert.equal(applied.status, 0, applied.stderr);
-    assert.equal((applied.stdout.match(/Applied /g) || []).length, 9);
+    assert.equal((applied.stdout.match(/Applied /g) || []).length, 16);
 
     const after = runMigrate(serverDir, dbUrl(TEST_DB), ['--dry-run']);
     assert.equal(after.status, 0, after.stderr);
