@@ -48,6 +48,10 @@ jobs:
           KUKLA_LAN_IP: 192.168.77.10
           POSTGRES_PASSWORD: test-only-value
           JWT_SECRET: test-only-value
+      - name: Smoke-test disposable LAN stack
+        run: bash ../infrastructure/lan-test/ci-smoke.sh
+        env:
+          KUKLA_DISPOSABLE_CI: '1'
       - run: npm run lint
       - run: npm run build
       - run: npm run migrate
