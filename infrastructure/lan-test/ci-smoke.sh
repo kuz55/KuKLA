@@ -29,7 +29,12 @@ for _ in $(seq 1 90); do
   if curl --noproxy '*' --silent --fail --connect-timeout 2 --max-time 3 --cacert private/test-ca.crt "https://$ip:18443/ready" >/dev/null; then ready=1; break; fi
   sleep 1
 done
-if [ "$ready" != 1 ]; then docker compose -f compose.yml ps; echo 'Test service is not ready' >&2; exit 1; fi
+if [ "$ready" != 1 ]; then
+  diagnostic="$(docker compose -f compose.yml ps --format json 2>/dev/null | python3 -c 'import json,sys; print("; ".join(str((x.get("Service"),x.get("State"),x.get("Health"))) for l in sys.stdin if (x:=json.loads(l))))' || true)"
+  echo "::error title=LAN smoke readiness::${diagnostic:-No container status}"
+  curl --noproxy '*' --show-error --fail --connect-timeout 2 --max-time 3 --cacert private/test-ca.crt "https://$ip:18443/ready" >/dev/null || true
+  echo 'Test service is not ready' >&2; exit 1
+fi
 printf '%s\n' "SELECT kukla_bootstrap_system_owner('Test owner','test-owner@example.invalid','test-only-password-2026');" | \
   docker compose -f compose.yml exec -T postgres sh -c 'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null
 curl --noproxy '*' --silent --show-error --fail --max-time 5 --cacert private/test-ca.crt \
