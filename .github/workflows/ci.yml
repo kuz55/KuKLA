@@ -98,7 +98,16 @@ jobs:
           done
           echo "server did not become ready in 30s" >&2
           exit 1
-      - run: npm test
+      - name: Run server tests
+        run: |
+          log="$RUNNER_TEMP/server-tests.log"
+          if npm test > "$log" 2>&1; then
+            cat "$log"
+          else
+            cat "$log"
+            node test/ci-failure-summary.mjs "$log"
+            exit 1
+          fi
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
