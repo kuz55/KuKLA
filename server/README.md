@@ -89,6 +89,10 @@ routes only outside production. Use synthetic data only.
   `GET .../transfer`, `POST .../transfer/accept` and `POST .../transfer/decline`.
   An assigned coordinator can cancel via `POST .../transfer/cancel` with a
   nonblank `reason`. A revoked initiator cannot complete a pending transfer.
+- `POST /api/v1/coordination/searches/:id/claim` requires an open search; closed
+  or cancelled searches return 409 even for a repeat claim. The search row lock
+  serializes claiming with closure. Other coordination transitions have not yet
+  all been frozen on closure.
 - `GET /api/v1/coordination/notifications` returns the eligible user's unread
   transfer notifications, paged by `limit` and `after`. A notification can be
   acknowledged through `POST /api/v1/coordination/notifications/:id/acknowledge`;

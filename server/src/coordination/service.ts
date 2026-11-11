@@ -22,8 +22,9 @@ export class CoordinationService {
   }
 
   private async lockSearch(client: PoolClient, searchId: string) {
-    const search = await client.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [searchId]);
+    const search = await client.query<{status:string}>('SELECT status FROM searches WHERE id=$1 FOR UPDATE', [searchId]);
     if (!search.rowCount) throw httpErrors.notFound('Search not found');
+    return search.rows[0].status;
   }
 
   private async requireEligible(client: PoolClient, userId: string) {
@@ -62,7 +63,8 @@ export class CoordinationService {
   async claim(actorId: string, searchId: string) {
     return this.transaction(async (client) => {
       await this.requireEligible(client, actorId);
-      await this.lockSearch(client, searchId);
+      const status = await this.lockSearch(client, searchId);
+      if (!['PLANNED','ACTIVE','PAUSED'].includes(status)) throw httpErrors.conflict('Search is not open');
       const current = await client.query<LockedPrimary>('SELECT user_id FROM search_coordinators WHERE search_id=$1 AND is_primary', [searchId]);
       if (current.rowCount) {
         return { primaryId: current.rows[0].user_id, claimed: current.rows[0].user_id === actorId };

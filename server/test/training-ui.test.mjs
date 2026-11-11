@@ -23,10 +23,16 @@ test('training interface logs in, retries unchanged, hands off and safely render
   const html=await readFile(new URL('../../infrastructure/lan-test/training-ui/index.html',import.meta.url),'utf8');
   const dom=new JSDOM(html,{url:'https://training.invalid/'});
   const {window}=dom; globalThis.window=window; globalThis.document=window.document; globalThis.FormData=window.FormData;
-  const calls=[]; let creates=0;
+  const calls=[]; let creates=0, proposals=0;
+  const search=randomUUID(), candidate=randomUUID(), proposal=randomUUID(), other=randomUUID();
   globalThis.fetch=async (path,options)=>{
     calls.push({path,options});
-    if(path==='/api/v1/auth/login') return ok({token:'synthetic-token',user:{name:'Test'}});
+    if(path==='/api/v1/auth/login') return ok({token:'synthetic-token',user:{name:'Test',id:candidate}});
+    if(path===`/api/v1/coordination/searches/${search}/claim`) return {ok:false,status:409,json:async()=>({primaryId:other})};
+    if(path===`/api/v1/field-lead/searches/${search}/proposals`) { proposals++; if(proposals===2) throw new Error('response lost'); return ok({proposalId:proposal}); }
+    if(path.startsWith('/api/v1/field-lead/notifications')) return ok({items:[{kind:'PROPOSED',search_id:search,proposal_id:proposal}],nextCursor:null});
+    if(path===`/api/v1/field-lead/searches/${search}/proposals/mine`) return ok({id:proposal});
+    if(path===`/api/v1/field-lead/searches/${search}/proposals/accept`) return ok({fieldLeadId:candidate});
     if(path==='/api/v1/intake/reports') { creates++; if(creates===1) throw new Error('lost response'); return ok({id:'report-id'}); }
     if(path==='/api/v1/intake/reports/report-id/handoff') return ok({});
     if(path.startsWith('/api/v1/intake/queue')) return ok({items:[{id:'report-id',handed_off_at:'2026-01-01T00:00:00Z'}],nextCursor:null});
@@ -56,5 +62,19 @@ test('training interface logs in, retries unchanged, hands off and safely render
     el('resolve').elements.title.value='Synthetic search';
     el('resolve').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
     assert.ok(calls.some(c=>c.path==='/api/v1/intake/reports/report-id/create-search'));
+    assert.ok(el('user-id').textContent.includes(candidate));
+    el('claim-form').elements.searchId.value=search;
+    el('claim-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.ok(el('claim-result').textContent.includes(other));
+    el('propose-form').elements.searchId.value=search; el('propose-form').elements.candidateId.value=candidate;
+    el('propose-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.ok(el('proposal-result').textContent.includes(proposal)); assert.equal(el('propose-button').disabled,true);
+    el('lead-notifications').click(); await tick(); el('lead-list').querySelector('button').click(); await tick();
+    const accept=[...el('lead-list').querySelectorAll('button')].find(button=>button.textContent==='Принять назначение');
+    assert.ok(accept); accept.click(); await tick(); assert.match(el('lead-result').textContent,/исторической квитанцией/);
+    assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/proposals/accept')).options.body).proposalId,proposal);
+    el('new-proposal').click(); el('propose-form').elements.searchId.value=search; el('propose-form').elements.candidateId.value=candidate;
+    el('propose-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('propose-button').disabled,true); assert.match(el('proposal-result').textContent,/Не повторяйте/);
   } finally { dom.window.close(); delete globalThis.window; delete globalThis.document; delete globalThis.FormData; }
 });
