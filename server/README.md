@@ -245,6 +245,6 @@ assignments or pending proposals/transfers; grant similarly refuses stale
 assignments left by out-of-band removal. This avoids silently breaking a
 handover or reviving old authority, but is not the complete agreed role-change
 process: current flows do not offer a safe removal for every situation,
-particularly unavailable coordinators. The global audit has no user-facing
-viewer yet. This is not a role-administration UI or a complete access matrix,
+particularly unavailable coordinators. The authenticated `GET /api/v1/eligibility/audit` endpoint lets an active
+leader page through grant/revoke audit entries; it has no client UI yet. This is not a role-administration UI or a complete access matrix,
 and existing endpoints still use legacy permissions. Do not use real data.

@@ -14,6 +14,13 @@ const eligibilityRoutes: FastifyPluginAsync = async app => {
     return reply.code(status).send({error:status === 401 ? 'UNAUTHORIZED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : status === 409 ? 'CONFLICT' : 'ERROR'});
   });
   app.addHook('onSend', async (_req,reply,payload) => { reply.header('Cache-Control','no-store'); return payload; });
+  app.get('/api/v1/eligibility/audit', {preHandler:auth}, async req => {
+    const query = z.object({
+      before: z.string().refine(value => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+    }).strict().parse(req.query);
+    return service.audit(req.user.id,query.before,query.limit);
+  });
   app.get('/api/v1/eligibility/users/:id', {preHandler:auth}, async req => service.status(req.user.id,parseId(req)));
   app.post('/api/v1/eligibility/users/:id/grant', {preHandler:auth}, async req => {
     const body = z.object({kind}).strict().parse(req.body);

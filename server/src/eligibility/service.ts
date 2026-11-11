@@ -32,6 +32,16 @@ export class EligibilityService {
           UNION ALL SELECT 1 FROM field_lead_proposals WHERE candidate_id=$1 LIMIT 1`, [target]);
     return Boolean(refs.rowCount);
   }
+  async audit(actor: string, before?: string, limit = 50) {
+    return this.tx(async c => {
+      await this.leader(c,actor);
+      const result = await c.query(`SELECT id::text,user_id,type,payload,created_at FROM events
+        WHERE search_id IS NULL AND type=ANY($1::text[]) AND ($2::bigint IS NULL OR id < $2::bigint)
+        ORDER BY id DESC LIMIT $3`, [['OPERATIONAL_ELIGIBILITY_GRANTED','OPERATIONAL_ELIGIBILITY_REVOKED'],before ?? null,limit+1]);
+      const items = result.rows.slice(0,limit);
+      return {items,nextCursor:result.rows.length > limit ? items[items.length-1].id as string : null};
+    });
+  }
   async status(actor: string, target: string) {
     return this.tx(async c => {
       await this.leader(c,actor);

@@ -36,6 +36,13 @@ test('leadership eligibility manages operational eligibility without legacy role
     assert.deepEqual((await call(leader,'POST',url(coordinator)+'/grant',{kind:'COORDINATOR'})).json(),{granted:true,created:false});
     assert.deepEqual((await call(leader,'GET',url(coordinator))).json(),{active:true,coordinator:true,field_lead:false});
     assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE user_id=$1 AND type='OPERATIONAL_ELIGIBILITY_GRANTED'",[leader])).rows[0].n,1);
+    const audit = '/api/v1/eligibility/audit';
+    assert.equal((await call(legacyLeader,'GET',audit)).statusCode,403);
+    assert.equal((await call(leader,'GET',`${audit}?before=bad`)).statusCode,400);
+    response = await call(leader,'GET',`${audit}?limit=100`);
+    assert.equal(response.statusCode,200);
+    assert.equal(response.headers['cache-control'],'no-store');
+    assert.ok(response.json().items.some(entry => entry.user_id===leader && entry.type==='OPERATIONAL_ELIGIBILITY_GRANTED' && entry.payload.userId===coordinator));
     const failingPool = {connect:async () => {
       const c = await pool.connect();
       return {release:()=>c.release(),query:(sql,params)=> {
@@ -64,6 +71,12 @@ test('leadership eligibility manages operational eligibility without legacy role
     await field.remove(coordinator,search,'synthetic exception');
     assert.deepEqual((await call(leader,'POST',url(candidate)+'/revoke',{kind:'FIELD_LEAD'})).json(),{revoked:true,removed:true});
     assert.deepEqual((await call(leader,'POST',url(candidate)+'/revoke',{kind:'FIELD_LEAD'})).json(),{revoked:true,removed:false});
+    const page = (await call(leader,'GET',`${audit}?limit=1`)).json();
+    assert.equal(page.items.length,1);
+    assert.ok(page.nextCursor);
+    const nextPage = (await call(leader,'GET',`${audit}?limit=1&before=${page.nextCursor}`)).json();
+    assert.equal(nextPage.items.length,1);
+    assert.notEqual(nextPage.items[0].id,page.items[0].id);
     // No resurrection of a legacy stale assignment after out-of-band removal.
     await pool.query('DELETE FROM coordinator_eligibility WHERE user_id=$1',[coordinator]);
     assert.equal((await call(leader,'POST',url(coordinator)+'/grant',{kind:'COORDINATOR'})).statusCode,409);
