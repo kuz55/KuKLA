@@ -114,3 +114,15 @@ Windows configuration is stored below `%APPDATA%\KuKLA`, and the local database 
 The desktop has an experimental **Вход на сервер** page. It accepts an HTTPS origin without a path; plaintext HTTP is allowed only for a numeric loopback address on the same computer (for example `http://127.0.0.1:18080`). A valid certificate trusted by the operating system is required for HTTPS, including local-network servers. The client does not disable TLS verification, follow redirects, or send login credentials via environment-configured proxies. Use synthetic test accounts only. The session is held in the engine's memory, not persisted; closing the application clears local memory but does not revoke the server session. Explicit logout attempts revocation, and reports if the server could not confirm it.
 
 **This does not protect or synchronize local operations or profiles.** The local SQLite prototype is still accessible without server sign-in and is unencrypted. The current server login alone does not mean the full workflow is ready or safe for real searches. Server address configuration is not persisted and no offline login is implemented. Network operations may briefly block the UI while the request times out.
+
+### Experimental server search view
+
+The desktop has a separate **Поиски на сервере (тест)** read-only page. It
+fetches the legacy server's list and a minimal card (ID, title, status), without
+saving them to the local database. It does not synchronize or authorize local
+operations. Results are cleared on logout or request error; an expired server
+session requires signing in again. The server's legacy list/detail endpoints
+still transmit additional fields to the engine and use the older membership and
+privileged-role model; they do not implement all agreed field-level access
+rules. This is test data only, not suitable for personal data or production.
+The server request is synchronous and may temporarily block the GTK interface.

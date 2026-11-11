@@ -55,6 +55,24 @@ const addR = await fetch(`${base}/api/v1/searches/${searchId}/members`, {
 });
 assert.equal(addR.status, 200);
 
+// Exercise the legacy read contract consumed by the test-only desktop view.
+// These checks do not establish the full approved field-access policy.
+test('Search list and card are scoped to legacy membership', async () => {
+  const list = await fetch(`${base}/api/v1/searches`, { headers: H(T.searcher) });
+  assert.equal(list.status, 200);
+  assert.ok((await list.json()).some((item) => item.id === searchId));
+  const card = await fetch(`${base}/api/v1/searches/${searchId}`, { headers: H(T.searcher) });
+  assert.equal(card.status, 200);
+  assert.equal((await card.json()).id, searchId);
+  const outsiderList = await fetch(`${base}/api/v1/searches`, { headers: H(T.viewer) });
+  assert.equal(outsiderList.status, 200);
+  assert.ok(!(await outsiderList.json()).some((item) => item.id === searchId));
+  const outsiderCard = await fetch(`${base}/api/v1/searches/${searchId}`, { headers: H(T.viewer) });
+  assert.equal(outsiderCard.status, 404);
+  const unsigned = await fetch(`${base}/api/v1/searches`);
+  assert.equal(unsigned.status, 401);
+});
+
 // Generic PATCH must not bypass the agreed close/reopen workflow.
 test('Search status updates are rejected atomically for authorized managers', async () => {
   const before = await queryTestDatabase('SELECT status, title, started_at, ended_at FROM searches WHERE id=$1', [searchId]);

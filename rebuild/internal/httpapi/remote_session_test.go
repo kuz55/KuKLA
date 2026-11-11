@@ -14,6 +14,12 @@ func TestRemoteSessionLocalAPI(t *testing.T) {
     api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         switch r.URL.Path {
         case "/api/v1/auth/login": fmt.Fprint(w, `{"token":"never-expose-this-token","user":{"id":"1","name":"Test","role":"VIEWER"}}`)
+        case "/api/v1/searches":
+            if r.Header.Get("Authorization") != "Bearer never-expose-this-token" { w.WriteHeader(401); return }
+            fmt.Fprint(w, `[{"id":"12345678-1234-1234-1234-123456789abc","title":"Test search","status":"PLANNED","description":"never-expose-description"}]`)
+        case "/api/v1/searches/12345678-1234-1234-1234-123456789abc":
+            if r.Header.Get("Authorization") != "Bearer never-expose-this-token" { w.WriteHeader(401); return }
+            fmt.Fprint(w, `{"id":"12345678-1234-1234-1234-123456789abc","title":"Test search","status":"PLANNED","description":"never-expose-description"}`)
         case "/api/v1/auth/logout": if r.Header.Get("Authorization") != "Bearer never-expose-this-token" { w.WriteHeader(401); return }; w.WriteHeader(200)
         default: w.WriteHeader(404)
         }
@@ -25,9 +31,18 @@ func TestRemoteSessionLocalAPI(t *testing.T) {
     handler.ServeHTTP(res, httptest.NewRequest("POST", "/v1/remote/login", strings.NewReader(login)))
     if res.Code != 200 || strings.Contains(res.Body.String(), "never-expose-this-token") || !strings.Contains(res.Body.String(), `"name":"Test"`) { t.Fatalf("unsafe or invalid response: %d %s",res.Code,res.Body.String()) }
     if res.Header().Get("Cache-Control") != "no-store" { t.Fatal("response must not be cached") }
+    for _, path := range []string{"/v1/remote/searches", "/v1/remote/searches/12345678-1234-1234-1234-123456789abc"} {
+        res = httptest.NewRecorder()
+        handler.ServeHTTP(res, httptest.NewRequest("GET", path, nil))
+        if res.Code != 200 || !strings.Contains(res.Body.String(), "Test search") || strings.Contains(res.Body.String(), "never-expose") { t.Fatalf("unsafe search response: %d %s", res.Code, res.Body.String()) }
+        if res.Header().Get("Cache-Control") != "no-store" { t.Fatal("search response must not be cached") }
+    }
     res = httptest.NewRecorder()
     handler.ServeHTTP(res, httptest.NewRequest("POST", "/v1/remote/logout", strings.NewReader(`{}`)))
     if res.Code != 200 { t.Fatalf("logout: %d",res.Code) }
+    res = httptest.NewRecorder()
+    handler.ServeHTTP(res, httptest.NewRequest("GET", "/v1/remote/searches", nil))
+    if res.Code != 401 { t.Fatalf("signed-out list: %d",res.Code) }
     res = httptest.NewRecorder()
     handler.ServeHTTP(res, httptest.NewRequest("POST", "/v1/remote/login", strings.NewReader(`{"server":"http://192.168.0.84","login":"x","password":"y"}`)))
     if res.Code != 400 { t.Fatalf("plaintext LAN should be rejected: %d",res.Code) }
