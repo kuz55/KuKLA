@@ -4,16 +4,16 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
 // A deliberately partial integration test: real password login through intake
-// and coordinator claim. It does not assert unsupported operational workflow.
+// and coordinator claim through experimental closure. Tasks, SMS and UI are not covered.
 test('password login to intake, search creation and coordinator claim', async () => {
-  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION'];
+  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE'];
   const previous = flags.map((key) => process.env[key]);
   flags.forEach((key) => { process.env[key] = 'true'; });
   const { buildApp } = await import('../dist/app.js');
   const { pool } = await import('../dist/config.js');
   const app = await buildApp();
-  const ids = Array.from({ length: 4 }, randomUUID);
-  const [operator, registrar, coordinator, outsider] = ids;
+  const ids = Array.from({ length: 5 }, randomUUID);
+  const [operator, registrar, coordinator, outsider, lead] = ids;
   const password = 'test-only-password-2026';
   let reportId, secondReportId, searchId;
   try {
@@ -23,6 +23,7 @@ test('password login to intake, search creation and coordinator claim', async ()
     }
     await pool.query("INSERT INTO intake_permissions(user_id,permission) VALUES($1,'RECORD'),($2,'REGISTER')", [operator, registrar]);
     await pool.query('INSERT INTO coordinator_eligibility(user_id) VALUES($1)', [coordinator]);
+    await pool.query('INSERT INTO field_lead_eligibility(user_id) VALUES($1)', [lead]);
     const tokens = new Map();
     for (const id of ids) {
       const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { login: `${id}@example.invalid`, password } });
@@ -78,6 +79,19 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal((await call(outsider, 'GET', reportList)).statusCode, 404);
     assert.equal((await call(coordinator, 'GET', `/api/v1/intake/searches/${randomUUID()}/reports`)).statusCode, 404);
     assert.equal((await call(coordinator, 'GET', `${reportList}?limit=0`)).statusCode, 400);
+    const proposals = `/api/v1/field-lead/searches/${searchId}/proposals`;
+    response = await call(registrar, 'POST', proposals, {candidateId: lead});
+    assert.equal(response.statusCode, 200);
+    const proposalId = response.json().proposalId;
+    assert.equal((await call(lead, 'POST', `${proposals}/accept`, {proposalId})).statusCode, 200);
+    const closure = `/api/v1/search-closure/searches/${searchId}`;
+    assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 409);
+    assert.equal((await call(lead, 'POST', `${closure}/confirm`, {})).statusCode, 200);
+    assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 200);
+    assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1', [searchId])).rows[0].status, 'COMPLETED');
+    assert.equal((await call(coordinator, 'POST', `${closure}/reopen`, {reason: 'New information'})).statusCode, 200);
+    assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1', [searchId])).rows[0].status, 'PLANNED');
+    assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 409);
     await pool.query('DELETE FROM coordinator_eligibility WHERE user_id=$1', [coordinator]);
     assert.equal((await call(coordinator, 'GET', reportList)).statusCode, 403);
   } finally {

@@ -16,6 +16,7 @@ import wsRoutes from './routes/ws.js';
 import intakeRoutes from './routes/intake.js';
 import coordinationRoutes from './routes/coordination.js';
 import fieldLeadRoutes from './routes/field-lead.js';
+import searchClosureRoutes from './routes/search-closure.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
 export async function buildApp() {
@@ -103,6 +104,10 @@ export async function buildApp() {
 
   if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD === 'true') {
     await app.register(fieldLeadRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE === 'true') {
+    await app.register(searchClosureRoutes);
   }
 
   return app;

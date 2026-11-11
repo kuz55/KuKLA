@@ -90,7 +90,7 @@ export class FieldLeadService {
       }
       const former = await c.query('SELECT user_id FROM search_field_leads WHERE search_id=$1', [searchId]);
       await c.query(`INSERT INTO search_field_leads(search_id,user_id,assigned_by) VALUES($1,$2,$3)
-        ON CONFLICT(search_id) DO UPDATE SET user_id=EXCLUDED.user_id,assigned_by=EXCLUDED.assigned_by,assigned_at=now()`, [searchId,actor,r.rows[0].proposed_by]);
+        ON CONFLICT(search_id) DO UPDATE SET user_id=EXCLUDED.user_id,assigned_by=EXCLUDED.assigned_by,assigned_at=now(),assignment_id=gen_random_uuid()`, [searchId,actor,r.rows[0].proposed_by]);
       await c.query('DELETE FROM field_lead_proposals WHERE id=$1', [proposalId]);
       const receipt = await c.query('INSERT INTO field_lead_acceptance_receipts(proposal_id,search_id,candidate_id) VALUES($1,$2,$3) RETURNING accepted_at', [proposalId,searchId,actor]);
       await this.event(c, searchId, actor, 'FIELD_LEAD_ACCEPTED', { proposalId, previousId: former.rows[0]?.user_id ?? null, fieldLeadId: actor });

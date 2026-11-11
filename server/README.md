@@ -98,7 +98,7 @@ Coordinator eligibility is independently checked on every request. **These
 experimental assignments do not grant access to the existing search API** and
 are not a full role model: administration of eligibility, push/SMS delivery, client polling and display,
 revocation/replacement of an unavailable primary, client UI, retry-safe transfer
-acceptance and search closure are not implemented. They do not change legacy
+acceptance and the complete search closure process are not implemented. They do not change legacy
 search permissions or enforce the agreed closure policy. Full authorization,
 security review and real PostgreSQL production checks are required before use.
 The stored inbox is not a push channel, proof of reading or a delivery guarantee.
@@ -142,3 +142,32 @@ updates. This is a temporary fail-closed restriction, not an implementation of
 the agreed close/reopen process. Other search and task endpoints are still
 experimental and do not yet enforce the complete approved workflow; do not use
 this server for real searches or personal data.
+
+## Experimental search closure (development only)
+
+Migration 020 and `KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE=true` enable a
+separate API only outside production. It relies on the explicit coordinator and
+field-lead eligibility/assignment tables; the flag does not configure those
+roles or enable their other APIs. All responses are `no-store`:
+
+- `POST /api/v1/search-closure/searches/:id/confirm` with `{}` records readiness
+  from the current active, eligible field lead. A retry for the same assignment
+  does not create another event. Replacement, including a later reappointment
+  of the same person, invalidates the old confirmation.
+- `POST .../close` with `{}` closes only with a valid confirmation; alternatively
+  provide `exceptionReason` (nonblank) when no valid confirmation exists. An
+  active, eligible coordinator assigned to this search, primary or additional,
+  must perform it. Closure sets `COMPLETED`, records the actor and confirmation
+  or exception, and consumes confirmation in the same transaction.
+- `POST .../reopen` with a nonblank `reason` requires the same coordinator
+  authority. This experiment restores the exact previous open status rather than
+  assuming activation. A legacy `COMPLETED` search without a closure record cannot
+  be reopened through this API. A new confirmation is required to close again.
+
+This is not the complete agreed process. SMS, an outbox/retry/delivery and
+contact-grant/revocation functionality are **not implemented**; there is no
+client interface, offline idempotency for close/reopen, complete status model,
+or secure unified authorization on legacy routes and audit events. A repeated
+close or reopen returns 409 rather than a delivery receipt. Other experimental
+workflows are not yet frozen when a search is closed. Do not enable for real
+personal data or use it as evidence of production readiness.
