@@ -20,6 +20,7 @@ import searchClosureRoutes from './routes/search-closure.js';
 import contactAccessRoutes from './routes/contact-access.js';
 import eligibilityRoutes from './routes/eligibility.js';
 import groupsRoutes from './routes/groups.js';
+import tasksRoutes from './routes/field-tasks.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
 export async function buildApp() {
@@ -125,6 +126,10 @@ export async function buildApp() {
 
   if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_GROUPS === 'true') {
     await app.register(groupsRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_TASKS === 'true') {
+    await app.register(tasksRoutes);
   }
 
   return app;

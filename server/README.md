@@ -259,8 +259,8 @@ and the field lead can propose another candidate. Acceptance also adds the
 lead to the approved group roster. A coordinator does not create groups or
 approve rosters through this API.
 
-The confirmed, active group lead can propose adding or removing an active
-search member. The field lead can approve or reject the proposal, or directly
+The confirmed, active group lead can propose adding an active search member or
+removing a search member, including one who has been deactivated. The field lead can approve or reject the proposal, or directly
 change the roster. Proposals alone never alter membership; approval rechecks
 that the proposer is still the active lead. The group lead cannot be removed
 through the roster operation. All changes and audit events are transactional.
@@ -279,10 +279,39 @@ can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
 schemas for exact bodies. Responses are `no-store`.
 
 This is **not a complete group process**: confirmed-lead replacement/removal,
-notifications, a field-lead group-event audit UI, tasks, offline retry receipts
-and client screens are missing. A lead proposal retry after acceptance returns
+notifications, a field-lead group-event audit UI, offline retry receipts
+and client screens are missing. The separate task experiment below is incomplete. A lead proposal retry after acceptance returns
 404; duplicate requests are not yet offline-idempotent. Search membership is
 still the legacy model, not the final participant admission process. Groups
 are inaccessible through this experimental API while the search is closed;
 other legacy routes and complete access policy remain unreviewed. Do not use
 real data or treat this as an operational system.
+
+## Experimental group tasks (development only)
+
+Migration 024 and `KUKLA_ENABLE_EXPERIMENTAL_TASKS=true` expose an independent,
+non-production API using groups from migration 023. The active field lead assigns
+an active group lead's group a task with description, explicit-offset deadline
+and `NORMAL`, `HIGH` or `URGENT` priority. The group lead accepts, submits a
+nonempty text result, and the field lead accepts it or returns it with a required
+reason. Returned results remain in history. A group member can read the group's
+tasks, but result history is restricted to the current group and field leads.
+The computed `overdue` flag is true when the deadline has passed and the task
+is not accepted; it does not change the task status. Audit events are written
+in the same transaction without copying description, result or return reason
+into the generic event log. All responses are `no-store`.
+
+Under `/api/v1/field-tasks/searches/:id`: `POST /groups/:groupId/tasks`
+accepts `description`, `priority`, `dueAt` (ISO 8601 with timezone); `GET` on
+the same path lists tasks. `POST /tasks/:taskId/accept`, `POST .../results`
+(`result`), and `POST .../decision` (`resultId`, `approve`; `reason` required
+only for rejection) perform transitions. `GET .../results` lists review
+history. List endpoints support UUID cursor `after` and `limit` up to 100.
+
+**Not a complete task system:** there is no notification delivery or overdue
+worker, task edit/cancellation, individual work distribution, offline retry
+or conflict resolution, UI or urgent text/icon presentation. Closed searches
+are inaccessible through this experimental API; duplicate mutations can return
+409 instead of a retry receipt. Legacy task routes remain separate and do not
+enforce this workflow. Do not use real personal data or operationally depend on
+this API.

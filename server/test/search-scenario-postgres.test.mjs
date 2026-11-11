@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
 // A deliberately partial integration test: real password login through intake
-// and coordinator claim through experimental closure. Tasks, SMS and UI are not covered.
+// and coordinator claim through group task review and experimental closure. SMS and UI are not covered.
 test('password login to intake, search creation and coordinator claim', async () => {
-  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE', 'KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS', 'KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY', 'KUKLA_ENABLE_EXPERIMENTAL_GROUPS'];
+  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE', 'KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS', 'KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY', 'KUKLA_ENABLE_EXPERIMENTAL_GROUPS', 'KUKLA_ENABLE_EXPERIMENTAL_TASKS'];
   const previous = flags.map((key) => process.env[key]);
   flags.forEach((key) => { process.env[key] = 'true'; });
   // This scenario logs in seven distinct synthetic actors from one test IP.
@@ -146,6 +146,15 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal(response.statusCode,200);
     assert.equal((await call(lead,'POST',`${groupPath}/member-decision`,{proposalId:response.json().proposalId,approve:true})).statusCode,200);
     assert.equal((await call(lead,'GET',groupPath)).json().members.length,2);
+    const taskBase=`/api/v1/field-tasks/searches/${searchId}`;
+    response=await call(lead,'POST',`${taskBase}/groups/${group.groupId}/tasks`,{description:'Synthetic task',priority:'HIGH',dueAt:'2030-01-01T00:00:00Z'});
+    assert.equal(response.statusCode,200);
+    const taskPath=`${taskBase}/tasks/${response.json().taskId}`;
+    assert.equal((await call(outsider,'POST',`${taskPath}/accept`,{})).statusCode,200);
+    response=await call(outsider,'POST',`${taskPath}/results`,{result:'Synthetic result'});
+    assert.equal(response.statusCode,200);
+    assert.equal((await call(lead,'POST',`${taskPath}/decision`,{resultId:response.json().resultId,approve:true})).statusCode,200);
+    assert.equal((await call(outsider,'GET',`${taskBase}/groups/${group.groupId}/tasks`)).json().items[0].status,'ACCEPTED');
     assert.equal((await call(lead, 'POST', `${closure}/confirm`, {})).statusCode, 200);
     const { SearchClosureService } = await import('../dist/search-closure/service.js');
     await assert.rejects(new SearchClosureService(failingPool).close(coordinator,searchId), /injected audit failure/);
