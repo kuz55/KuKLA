@@ -9,6 +9,10 @@ test('password login to intake, search creation and coordinator claim', async ()
   const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE', 'KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS'];
   const previous = flags.map((key) => process.env[key]);
   flags.forEach((key) => { process.env[key] = 'true'; });
+  // This scenario logs in six distinct synthetic actors from one test IP.
+  // Rate limiting itself is covered separately with the production threshold.
+  const previousRate = process.env.RATE_LIMIT_LOGIN_MAX;
+  process.env.RATE_LIMIT_LOGIN_MAX = '100';
   const { buildApp } = await import('../dist/app.js');
   const { pool } = await import('../dist/config.js');
   const app = await buildApp();
@@ -195,5 +199,6 @@ test('password login to intake, search creation and coordinator claim', async ()
     await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [ids]);
     await pool.end();
     flags.forEach((key, i) => { if (previous[i] === undefined) delete process.env[key]; else process.env[key] = previous[i]; });
+    if (previousRate === undefined) delete process.env.RATE_LIMIT_LOGIN_MAX; else process.env.RATE_LIMIT_LOGIN_MAX = previousRate;
   }
 });
