@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { closeTestDatabase, createTestUser, ensureTestOwner } from './db.mjs';
+import { closeTestDatabase, createTestUser, ensureTestOwner, queryTestDatabase } from './db.mjs';
 
 const base = process.env.KUKLA_TEST_URL ?? 'http://127.0.0.1:8080';
 
@@ -54,6 +54,29 @@ const addR = await fetch(`${base}/api/v1/searches/${searchId}/members`, {
   method: 'POST', headers: J(T.leader), body: JSON.stringify({ userId: U.searcher.id }),
 });
 assert.equal(addR.status, 200);
+
+// Generic PATCH must not bypass the agreed close/reopen workflow.
+test('Search status updates are rejected atomically for authorized managers', async () => {
+  const before = await queryTestDatabase('SELECT status, title, started_at, ended_at FROM searches WHERE id=$1', [searchId]);
+  const eventsBefore = await queryTestDatabase('SELECT count(*)::int AS count FROM events WHERE search_id=$1', [searchId]);
+  for (const token of [T.leader, T.owner]) {
+    for (const status of ['PLANNED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED']) {
+      const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
+        method: 'PATCH', headers: J(token), body: JSON.stringify({ status, title: 'Must not be saved' }),
+      });
+      assert.equal(r.status, 409, `status ${status}`);
+    }
+  }
+  const after = await queryTestDatabase('SELECT status, title, started_at, ended_at FROM searches WHERE id=$1', [searchId]);
+  const eventsAfter = await queryTestDatabase('SELECT count(*)::int AS count FROM events WHERE search_id=$1', [searchId]);
+  assert.deepEqual(after.rows, before.rows);
+  assert.deepEqual(eventsAfter.rows, eventsBefore.rows);
+  const r = await fetch(`${base}/api/v1/searches/${searchId}`, {
+    method: 'PATCH', headers: J(T.leader), body: JSON.stringify({ title: `Allowed metadata ${ts}` }),
+  });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).title, `Allowed metadata ${ts}`);
+});
 
 // ============================================================================
 // Non-members: scoped resources must be hidden with a not-found response
