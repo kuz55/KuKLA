@@ -52,6 +52,20 @@ test('field groups require accepted group lead and field lead approval of member
     assert.deepEqual(response.json().members.map(x=>x.user_id),[groupLead]);
     assert.equal((await call(groupLead,'GET',g)).statusCode,200);
     assert.equal((await call(groupLead,'GET','/groups')).json().items[0].id,groupId);
+    await pool.query("INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,'FIELD_GROUP_MEMBER_PROPOSED',$3)",
+      [search,groupLead,{groupId,userId:searcher,action:'ADD',secret:'synthetic secret'}]);
+    await pool.query("INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,'UNKNOWN_WORKFLOW',$3)",
+      [search,groupLead,{groupId,secret:'synthetic secret'}]);
+    assert.equal((await call(searcher,'GET',`${g}/audit`)).statusCode,403);
+    assert.equal((await call(outsider,'GET',`${g}/audit`)).statusCode,403);
+    assert.equal((await call(fieldLead,'GET',`${g}/audit?before=9223372036854775808`)).statusCode,400);
+    const audit=await call(fieldLead,'GET',`${g}/audit?limit=1`);
+    assert.equal(audit.statusCode,200); assert.equal(audit.headers['cache-control'],'no-store');
+    assert.ok(audit.json().nextCursor); assert.equal(audit.json().items[0].details.userId,searcher);
+    assert.ok(!audit.body.includes('secret')); assert.ok(!audit.body.includes('payload'));
+    const auditNext=await call(groupLead,'GET',`${g}/audit?before=${audit.json().nextCursor}`);
+    assert.equal(auditNext.statusCode,200); assert.ok(auditNext.json().items.every(x=>x.type.startsWith('FIELD_GROUP_')));
+    assert.ok(auditNext.json().items.some(x=>x.type==='FIELD_GROUP_CREATED'));
     const legacyRemove=await app.inject({method:'DELETE',url:`/api/v1/searches/${search}/members/${groupLead}`,headers:{authorization:`Bearer ${tokens[registrar]}`}});
     assert.equal(legacyRemove.statusCode,409, 'legacy removal cannot bypass group roster');
     assert.equal((await call(coordinator,'POST',`${g}/members/change`,{userId:searcher,action:'ADD'})).statusCode,403);

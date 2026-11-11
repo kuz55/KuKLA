@@ -73,16 +73,32 @@ export class FieldTasksService {
       return {items,nextCursor:r.rows.length>limit ? items[items.length-1].id as string : null};
     });
   }
+  private async reader(c:PoolClient, search:string, group:string, actor:string) {
+    const access=await c.query(`SELECT 1 FROM users u WHERE u.id=$3 AND u.active=true AND (
+      EXISTS(SELECT 1 FROM search_field_leads f JOIN field_lead_eligibility e ON e.user_id=f.user_id WHERE f.search_id=$1 AND f.user_id=u.id)
+      OR EXISTS(SELECT 1 FROM field_group_leads l JOIN search_members m ON m.search_id=l.search_id AND m.user_id=l.user_id
+        WHERE l.search_id=$1 AND l.group_id=$2 AND l.user_id=u.id)) FOR SHARE OF u`,[search,group,actor]);
+    if (!access.rowCount) throw httpErrors.forbidden('Group or field lead required');
+  }
   async results(actor:string, search:string, id:string, after:string|undefined, limit:number) {
     return this.tx(async c => {
-      await this.lockSearch(c,search); const t=await this.task(c,search,id);
-      const access=await c.query(`SELECT 1 FROM users u WHERE u.id=$3 AND u.active=true AND (
-        EXISTS(SELECT 1 FROM search_field_leads f JOIN field_lead_eligibility e ON e.user_id=f.user_id WHERE f.search_id=$1 AND f.user_id=u.id)
-        OR EXISTS(SELECT 1 FROM field_group_leads l JOIN search_members m ON m.search_id=l.search_id AND m.user_id=l.user_id
-          WHERE l.search_id=$1 AND l.group_id=$2 AND l.user_id=u.id)) FOR SHARE OF u`,[search,t.group_id,actor]);
-      if (!access.rowCount) throw httpErrors.forbidden('Group or field lead required');
+      await this.lockSearch(c,search); const t=await this.task(c,search,id); await this.reader(c,search,t.group_id,actor);
       const r=await c.query(`SELECT id,submitted_by,result,submitted_at,decision,decision_by,decision_at,return_reason
         FROM field_task_results WHERE task_id=$1 AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,[id,after ?? null,limit+1]);
+      const items=r.rows.slice(0,limit);
+      return {items,nextCursor:r.rows.length>limit ? items[items.length-1].id as string : null};
+    });
+  }
+  async audit(actor:string, search:string, id:string, before:string|undefined, limit:number) {
+    return this.tx(async c => {
+      await this.lockSearch(c,search); const t=await this.task(c,search,id); await this.reader(c,search,t.group_id,actor);
+      // Only known task event types and selected columns are exposed; generic
+      // event payloads and other workflows may contain sensitive information.
+      const r=await c.query(`SELECT id::text,user_id,type,created_at FROM events
+        WHERE search_id=$1 AND payload->>'taskId'=$2 AND type=ANY($3::text[])
+        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY id DESC LIMIT $5`,
+      [search,id,['FIELD_TASK_CREATED','FIELD_TASK_STARTED','FIELD_TASK_RESULT_SUBMITTED',
+        'FIELD_TASK_RESULT_ACCEPTED','FIELD_TASK_RESULT_RETURNED'],before ?? null,limit+1]);
       const items=r.rows.slice(0,limit);
       return {items,nextCursor:r.rows.length>limit ? items[items.length-1].id as string : null};
     });

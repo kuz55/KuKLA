@@ -47,6 +47,11 @@ const tasksRoutes: FastifyPluginAsync = async app => {
   app.get(`${root}/tasks/:taskId/results`,{preHandler:auth},async req=>{
     const q=page.parse(req.query); return service.results(req.user.id,parseId(req),taskId(req.params),q.after,q.limit);
   });
+  app.get(`${root}/tasks/:taskId/audit`,{preHandler:auth},async req=>{
+    const q=z.object({before:z.string().refine(v=>/^[1-9][0-9]{0,18}$/.test(v) && BigInt(v)<=9223372036854775807n).optional(),
+      limit:z.coerce.number().int().min(1).max(100).default(50)}).strict().parse(req.query);
+    return service.audit(req.user.id,parseId(req),taskId(req.params),q.before,q.limit);
+  });
   app.post(`${root}/tasks/:taskId/accept`,{preHandler:auth},async req=>{
     const body=z.object({requestId:z.string().uuid()}).strict().parse(req.body);
     return service.accept(req.user.id,parseId(req),taskId(req.params),body.requestId);

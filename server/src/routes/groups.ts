@@ -26,6 +26,11 @@ const groupsRoutes: FastifyPluginAsync = async app => {
   });
   app.get(`${root}/my-lead-proposals`,{preHandler:auth},async req => service.myProposals(req.user.id,parseId(req)));
   app.get(`${root}/groups/:groupId`,{preHandler:auth},async req => service.groupState(req.user.id,parseId(req),groupId(req.params)));
+  app.get(`${root}/groups/:groupId/audit`,{preHandler:auth},async req => {
+    const query=z.object({before:z.string().refine(v=>/^[1-9][0-9]{0,18}$/.test(v) && BigInt(v)<=9223372036854775807n).optional(),
+      limit:z.coerce.number().int().min(1).max(100).default(50)}).strict().parse(req.query);
+    return service.audit(req.user.id,parseId(req),groupId(req.params),query.before,query.limit);
+  });
   app.post(`${root}/groups/:groupId/lead-proposals`,{preHandler:auth},async req => {
     const body=z.object({candidateId:z.string().uuid()}).strict().parse(req.body);
     return service.proposeLead(req.user.id,parseId(req),groupId(req.params),body.candidateId);

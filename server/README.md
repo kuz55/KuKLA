@@ -275,11 +275,13 @@ group with `POST /groups` (`title`, `candidateId`). A candidate reads
 `POST /groups/:groupId/lead-proposals`. Field lead and confirmed group leads
 can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
 `GET /groups/:groupId`; roster changes use `POST .../members/change`,
-`POST .../member-proposals` and `POST .../member-decision`. See the route
+`POST .../member-proposals` and `POST .../member-decision`. Current field and
+group leads can read `GET /groups/:groupId/audit` with `before` (event ID) and
+`limit`, returning only selected group event types and fields. See the route
 schemas for exact bodies. Responses are `no-store`.
 
 This is **not a complete group process**: confirmed-lead replacement/removal,
-notifications, a field-lead group-event audit UI, offline retry receipts
+notifications, a group-event audit UI, offline retry receipts
 and client screens are missing. The separate task experiment below is incomplete. A lead proposal retry after acceptance returns
 404; duplicate requests are not yet offline-idempotent. Search membership is
 still the legacy model, not the final participant admission process. Groups
@@ -321,9 +323,12 @@ reason returns 409. Responses are historical receipts, **not current task
 status**; read the task list to obtain current status. Previously accepted
 tasks and results without request IDs cannot gain these receipts retroactively.
 All retries recheck current permissions and require an open search.
-`GET .../results` lists review history. List endpoints support UUID cursor
-`after` and `limit` up to 100. These limited receipts are not an offline queue
-or a way to preserve and resolve conflicting versions.
+`GET .../results` lists review history. These list endpoints support UUID
+cursor `after` and `limit` up to 100. `GET .../audit` lets the current field or
+group lead page task-specific transition events using `before` (event ID) and
+`limit`; it returns actor, event type and time, not generic event payloads.
+These limited receipts and audit are not an offline queue or a way to preserve
+and resolve conflicting versions.
 
 Migration 025 adds a private overdue inbox. With both the tasks flag and
 `KUKLA_ENABLE_EXPERIMENTAL_TASK_REMINDERS=true`, a best-effort in-process

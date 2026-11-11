@@ -83,21 +83,40 @@ export class FieldGroupsService {
       return {items,nextCursor:result.rows.length>limit ? items[items.length-1].id as string : null};
     });
   }
+  private async reader(c: PoolClient, searchId: string, groupId: string, actor: string) {
+    const active = await c.query('SELECT id FROM users WHERE id=$1 AND active=true FOR SHARE',[actor]);
+    if (!active.rowCount) throw httpErrors.forbidden('Active user required');
+    const access = await c.query(`SELECT 1 FROM search_field_leads f JOIN field_lead_eligibility e ON e.user_id=f.user_id
+      WHERE f.search_id=$1 AND f.user_id=$3
+      UNION ALL SELECT 1 FROM field_group_leads l JOIN search_members m ON m.search_id=l.search_id AND m.user_id=l.user_id
+      WHERE l.search_id=$1 AND l.group_id=$2 AND l.user_id=$3 LIMIT 1`,[searchId,groupId,actor]);
+    if (!access.rowCount) throw httpErrors.forbidden('Group or field lead required');
+  }
   async groupState(actor: string, searchId: string, groupId: string) {
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId);
-      const active = await c.query('SELECT id FROM users WHERE id=$1 AND active=true FOR SHARE',[actor]);
-      if (!active.rowCount) throw httpErrors.forbidden('Active user required');
-      const access = await c.query(`SELECT 1 FROM search_field_leads f JOIN field_lead_eligibility e ON e.user_id=f.user_id
-        WHERE f.search_id=$1 AND f.user_id=$3
-        UNION ALL SELECT 1 FROM field_group_leads l WHERE l.search_id=$1 AND l.group_id=$2 AND l.user_id=$3 LIMIT 1`,[searchId,groupId,actor]);
-      if (!access.rowCount) throw httpErrors.forbidden('Group or field lead required');
+      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.reader(c,searchId,groupId,actor);
       const g = await c.query('SELECT id,title,created_at FROM field_groups WHERE id=$1 AND search_id=$2',[groupId,searchId]);
       const lead = await c.query('SELECT user_id,accepted_at FROM field_group_leads WHERE group_id=$1',[groupId]);
       const proposal = await c.query('SELECT id,candidate_id,created_at FROM field_group_lead_proposals WHERE group_id=$1',[groupId]);
       const members = await c.query('SELECT user_id,joined_at FROM field_group_members WHERE group_id=$1 ORDER BY joined_at,user_id',[groupId]);
       const proposals = await c.query('SELECT id,user_id,proposed_by,action,created_at FROM field_group_member_proposals WHERE group_id=$1 ORDER BY created_at,id LIMIT 100',[groupId]);
       return {group:g.rows[0],lead:lead.rows[0] ?? null,leadProposal:proposal.rows[0] ?? null,members:members.rows,memberProposals:proposals.rows};
+    });
+  }
+  async audit(actor:string, searchId:string, groupId:string, before:string|undefined, limit:number) {
+    return this.tx(async c => {
+      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.reader(c,searchId,groupId,actor);
+      // Whitelist event types and fields rather than exposing generic payloads.
+      const r=await c.query(`SELECT id::text,user_id,type,created_at,
+        jsonb_strip_nulls(jsonb_build_object('userId',payload->'userId','candidateId',payload->'candidateId',
+          'proposalId',payload->'proposalId','action',payload->'action')) AS details FROM events
+        WHERE search_id=$1 AND payload->>'groupId'=$2 AND type=ANY($3::text[])
+        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY id DESC LIMIT $5`,
+      [searchId,groupId,['FIELD_GROUP_CREATED','FIELD_GROUP_LEAD_PROPOSED','FIELD_GROUP_LEAD_ACCEPTED',
+        'FIELD_GROUP_LEAD_DECLINED','FIELD_GROUP_MEMBER_CHANGED','FIELD_GROUP_MEMBER_PROPOSED',
+        'FIELD_GROUP_MEMBER_APPROVED','FIELD_GROUP_MEMBER_REJECTED'],before ?? null,limit+1]);
+      const items=r.rows.slice(0,limit);
+      return {items,nextCursor:r.rows.length>limit ? items[items.length-1].id as string : null};
     });
   }
   async respond(actor: string, searchId: string, groupId: string, proposalId: string, accept: boolean) {
