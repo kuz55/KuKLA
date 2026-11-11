@@ -279,7 +279,10 @@ proposal ID is a historical receipt, not proof that it is still pending.
 Groups predating migration 029 have no such receipt. A candidate reads
 `GET /my-lead-proposals` and decides with `POST /groups/:groupId/lead-response`
 (`proposalId`, `accept`). The field lead can propose another candidate with
-`POST /groups/:groupId/lead-proposals`. Field lead and confirmed group leads
+`POST /groups/:groupId/lead-proposals` (`requestId`, `candidateId`). Migration
+031 retains the proposal receipt: an identical authorized retry returns the
+same proposal ID even after resolution, and a changed group or candidate under
+the same key returns 409. Earlier proposals have no such receipt. Field lead and confirmed group leads
 can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
 `GET /groups/:groupId`; roster changes use `POST .../members/change`,
 `POST .../member-proposals` and `POST .../member-decision`. Current field and

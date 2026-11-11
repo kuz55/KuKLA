@@ -60,14 +60,24 @@ export class FieldGroupsService {
       return {groupId:id, proposalId:proposal.rows[0].id as string};
     });
   }
-  async proposeLead(actor: string, searchId: string, groupId: string, candidate: string) {
+  async proposeLead(actor: string, searchId: string, groupId: string, candidate: string, requestId: string) {
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor); await this.group(c,searchId,groupId); await this.member(c,searchId,candidate);
+      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor);
+      const receipt=await c.query(`SELECT proposal_id,(group_id=$4 AND candidate_id=$5) AS matches
+        FROM field_group_lead_proposal_receipts WHERE search_id=$1 AND actor_id=$2 AND request_id=$3`,
+      [searchId,actor,requestId,groupId,candidate]);
+      if (receipt.rowCount) {
+        if (!receipt.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different proposal');
+        return {proposalId:receipt.rows[0].proposal_id as string};
+      }
+      await this.group(c,searchId,groupId); await this.member(c,searchId,candidate);
       const lead = await c.query('SELECT 1 FROM field_group_leads WHERE group_id=$1',[groupId]);
       if (lead.rowCount) throw httpErrors.conflict('Group already has an accepted lead');
       const proposal = await c.query(`INSERT INTO field_group_lead_proposals(group_id,search_id,candidate_id,proposed_by)
         VALUES($1,$2,$3,$4) ON CONFLICT(group_id) DO NOTHING RETURNING id`,[groupId,searchId,candidate,actor]);
       if (!proposal.rowCount) throw httpErrors.conflict('A proposal is already pending');
+      await c.query(`INSERT INTO field_group_lead_proposal_receipts(proposal_id,group_id,search_id,actor_id,request_id,candidate_id)
+        VALUES($1,$2,$3,$4,$5,$6)`,[proposal.rows[0].id,groupId,searchId,actor,requestId,candidate]);
       await this.event(c,searchId,actor,'FIELD_GROUP_LEAD_PROPOSED',{groupId,candidateId:candidate,proposalId:proposal.rows[0].id});
       return {proposalId:proposal.rows[0].id as string};
     });
