@@ -37,7 +37,7 @@ export class EligibilityService {
       await this.leader(c,actor);
       const result = await c.query(`SELECT id::text,user_id,type,payload,created_at FROM events
         WHERE search_id IS NULL AND type=ANY($1::text[]) AND ($2::bigint IS NULL OR id < $2::bigint)
-        ORDER BY id DESC LIMIT $3`, [['OPERATIONAL_ELIGIBILITY_GRANTED','OPERATIONAL_ELIGIBILITY_REVOKED'],before ?? null,limit+1]);
+        ORDER BY events.id DESC LIMIT $3`, [['OPERATIONAL_ELIGIBILITY_GRANTED','OPERATIONAL_ELIGIBILITY_REVOKED'],before ?? null,limit+1]);
       const items = result.rows.slice(0,limit);
       return {items,nextCursor:result.rows.length > limit ? items[items.length-1].id as string : null};
     });

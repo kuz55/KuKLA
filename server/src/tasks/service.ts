@@ -96,7 +96,7 @@ export class FieldTasksService {
       // event payloads and other workflows may contain sensitive information.
       const r=await c.query(`SELECT id::text,user_id,type,created_at FROM events
         WHERE search_id=$1 AND payload->>'taskId'=$2 AND type=ANY($3::text[])
-        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY id DESC LIMIT $5`,
+        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY events.id DESC LIMIT $5`,
       [search,id,['FIELD_TASK_CREATED','FIELD_TASK_STARTED','FIELD_TASK_RESULT_SUBMITTED',
         'FIELD_TASK_RESULT_ACCEPTED','FIELD_TASK_RESULT_RETURNED'],before ?? null,limit+1]);
       const items=r.rows.slice(0,limit);

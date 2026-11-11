@@ -121,7 +121,7 @@ export class FieldGroupsService {
         jsonb_strip_nulls(jsonb_build_object('userId',payload->'userId','candidateId',payload->'candidateId',
           'proposalId',payload->'proposalId','action',payload->'action')) AS details FROM events
         WHERE search_id=$1 AND payload->>'groupId'=$2 AND type=ANY($3::text[])
-        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY id DESC LIMIT $5`,
+        AND ($4::bigint IS NULL OR id<$4::bigint) ORDER BY events.id DESC LIMIT $5`,
       [searchId,groupId,['FIELD_GROUP_CREATED','FIELD_GROUP_LEAD_PROPOSED','FIELD_GROUP_LEAD_ACCEPTED',
         'FIELD_GROUP_LEAD_DECLINED','FIELD_GROUP_MEMBER_CHANGED','FIELD_GROUP_MEMBER_PROPOSED',
         'FIELD_GROUP_MEMBER_APPROVED','FIELD_GROUP_MEMBER_REJECTED'],before ?? null,limit+1]);

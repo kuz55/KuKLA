@@ -36,7 +36,7 @@ export class SearchClosureService {
       await this.coordinator(client, actor, searchId);
       const result = await client.query(`SELECT id::text,user_id,type,payload,created_at FROM events
         WHERE search_id=$1 AND type=ANY($2::text[]) AND ($3::bigint IS NULL OR id < $3::bigint)
-        ORDER BY id DESC LIMIT $4`, [searchId, ['SEARCH_CLOSURE_CONFIRMED','SEARCH_CLOSED','SEARCH_REOPENED'], before ?? null, limit + 1]);
+        ORDER BY events.id DESC LIMIT $4`, [searchId, ['SEARCH_CLOSURE_CONFIRMED','SEARCH_CLOSED','SEARCH_REOPENED'], before ?? null, limit + 1]);
       const items = result.rows.slice(0, limit);
       return { items, nextCursor: result.rows.length > limit ? items[items.length - 1].id as string : null };
     });
