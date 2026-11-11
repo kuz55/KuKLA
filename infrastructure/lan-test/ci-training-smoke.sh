@@ -34,8 +34,9 @@ done
 stage='seed synthetic users'
 docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T -e KUKLA_TRAINING_SEED=synthetic-only server node --input-type=module < seed-training.mjs > private/ci-accounts.json
 stage='HTTPS UI and intake scenario'
-NODE_EXTRA_CA_CERTS="$PWD/private/test-ca.crt" TRAINING_URL="https://$ip:18443" node --input-type=module <<'NODE'
+NODE_EXTRA_CA_CERTS="$PWD/private/test-ca.crt" TRAINING_URL="https://$ip:18443" TRAINING_PROJECT="$project" node --input-type=module <<'NODE'
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 process.on('uncaughtException', error => {
   // Only synthetic data is used here; never print credentials or response bodies.
   const message=String(error.message).replace(/[\r\n%]/g,' ');
@@ -64,5 +65,24 @@ const proposed=await (await req(proposals,{method:'POST',headers:headers(registr
 const inbox=await (await req('/api/v1/field-lead/notifications',{headers:{authorization:`Bearer ${lead.token}`}})).json();
 if (!inbox.items.some(x=>x.proposal_id===proposed.proposalId && x.kind==='PROPOSED')) throw Error('Lead invitation missing');
 await req(`${proposals}/accept`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({proposalId:proposed.proposalId})});
-console.log('Training stack: HTTPS, intake, coordinator and field-lead path passed.');
+const enrol=()=>execFileSync('docker',['compose','-p',process.env.TRAINING_PROJECT,'-f','compose.yml','-f','compose.training.yml','exec','-T',
+  '-e','KUKLA_TRAINING_ENROL=synthetic-only','-e',`KUKLA_TRAINING_SEARCH_ID=${created.searchId}`,'server','node','--input-type=module'],
+  {input:fs.readFileSync('enrol-training.mjs'),encoding:'utf8'});
+if (!enrol().includes('2 account(s) added') || !enrol().includes('0 account(s) added')) throw Error('Training enrolment retry failed');
+let productionBlocked=false;
+try {
+  execFileSync('docker',['compose','-p',process.env.TRAINING_PROJECT,'-f','compose.yml','-f','compose.training.yml','exec','-T',
+    '-e','NODE_ENV=production','-e','KUKLA_TRAINING_ENROL=synthetic-only','-e',`KUKLA_TRAINING_SEARCH_ID=${created.searchId}`,
+    'server','node','--input-type=module'],{input:fs.readFileSync('enrol-training.mjs'),stdio:'pipe'});
+} catch { productionBlocked=true; }
+if (!productionBlocked) throw Error('Production enrolment must be blocked');
+const groupLead=await login('grouplead'), groupBase=`/api/v1/field-groups/searches/${created.searchId}`;
+const group=await (await req(`${groupBase}/groups`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({requestId:crypto.randomUUID(),title:'Synthetic group',candidateId:groupLead.user.id})})).json();
+await req(`${groupBase}/groups/${group.groupId}/lead-response`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({proposalId:group.proposalId,accept:true})});
+const taskBase=`/api/v1/field-tasks/searches/${created.searchId}`;
+const task=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({requestId:crypto.randomUUID(),description:'Synthetic task',dueAt:'2030-01-01T00:00:00Z',priority:'URGENT'})})).json();
+const tasks=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{headers:{authorization:`Bearer ${groupLead.token}`}})).json();
+if (!tasks.items.some(x=>x.id===task.taskId && x.priority==='URGENT')) throw Error('Group task missing');
+await req(`${taskBase}/tasks/${task.taskId}/accept`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({requestId:crypto.randomUUID()})});
+console.log('Training stack: HTTPS, intake, coordinator, field lead, group and task path passed.');
 NODE
