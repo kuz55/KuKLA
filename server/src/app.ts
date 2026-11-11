@@ -21,8 +21,16 @@ import fieldLeadRoutes from './routes/field-lead.js';
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+    // Fastify's default request and 404 logs include the full URL and query.
+    // Use route templates instead of user-controlled paths, query or headers.
+    disableRequestLogging: true,
     trustProxy: TRUST_PROXY.length ? TRUST_PROXY : false,
   });
+
+  app.addHook('onResponse', async (req, reply) => {
+    req.log.info({ method: req.method, route: req.routeOptions.url ?? 'unmatched', statusCode: reply.statusCode, elapsedMs: reply.elapsedTime }, 'request completed');
+  });
+  app.setNotFoundHandler(async (_req, reply) => reply.code(404).send({ error: 'NOT_FOUND', message: 'Route not found' }));
 
   await app.register(cors, { origin: CORS_ORIGIN });
   await app.register(sensible);
