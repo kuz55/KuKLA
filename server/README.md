@@ -378,6 +378,19 @@ This is **not notification delivery**: no push, client UI, delivery retry,
 read guarantee or monitoring exists, and the worker does nothing when stopped.
 The period is a development polling interval, not an agreed service level.
 
+Migration 034 adds a separate private activity inbox. Assignment and result
+review notify the current active group lead; task acceptance and result
+submission notify the current active, eligible field lead, when one exists.
+Entries are recorded atomically with the transition and contain identifiers and
+kind, not descriptions, results or reasons. Identical command retries do not
+create another entry. `GET /api/v1/field-tasks/activity-notifications` pages
+unread entries (`after`, `limit`), and `POST /api/v1/field-tasks/activity-notifications/:id/acknowledge`
+acknowledges an entry. Only the original recipient with the current applicable
+role can access it while the search is open; role changes do not transfer old
+entries. If there is no eligible recipient at transition time no entry is made.
+This is stored activity, not device delivery or proof of reading; no push or UI
+exists, and clients must fetch current task state.
+
 **Not a complete task system:** there is no notification delivery, task
 edit/cancellation, individual work distribution, offline queue or conflict
 resolution, UI or urgent text/icon presentation. Closed searches

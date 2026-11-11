@@ -4,10 +4,12 @@ import { auth, parseId } from '../http.js';
 import { pool } from '../config.js';
 import { FieldTasksService } from '../tasks/service.js';
 import { TaskOverdueInbox } from '../tasks/overdue.js';
+import { TaskActivityInbox } from '../tasks/inbox.js';
 
 const tasksRoutes: FastifyPluginAsync = async app => {
   const service=new FieldTasksService(pool);
   const inbox=new TaskOverdueInbox(pool);
+  const activity=new TaskActivityInbox(pool);
   // Optional best-effort worker; no device delivery or delivery guarantee.
   let timer:NodeJS.Timeout|undefined, running:Promise<void>|undefined;
   if (process.env.KUKLA_ENABLE_EXPERIMENTAL_TASK_REMINDERS === 'true') {
@@ -36,6 +38,10 @@ const tasksRoutes: FastifyPluginAsync = async app => {
     const q=page.parse(req.query); return inbox.list(req.user.id,q.after,q.limit);
   });
   app.post('/api/v1/field-tasks/notifications/:id/acknowledge',{preHandler:auth},async req=>inbox.acknowledge(req.user.id,parseId(req)));
+  app.get('/api/v1/field-tasks/activity-notifications',{preHandler:auth},async req=>{
+    const q=page.parse(req.query); return activity.list(req.user.id,q.after,q.limit);
+  });
+  app.post('/api/v1/field-tasks/activity-notifications/:id/acknowledge',{preHandler:auth},async req=>activity.acknowledge(req.user.id,parseId(req)));
   app.post(`${root}/groups/:groupId/tasks`,{preHandler:auth},async req=>{
     const body=z.object({requestId:z.string().uuid(),description:z.string().trim().min(1).max(4000),priority:z.enum(['NORMAL','HIGH','URGENT']),
       dueAt:z.iso.datetime({offset:true}).refine(v=>!v.startsWith('0000-') && Number.isFinite(Date.parse(v)))}).strict().parse(req.body);

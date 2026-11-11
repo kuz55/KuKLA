@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { httpErrors } from '@fastify/sensible';
 
 type Priority = 'NORMAL' | 'HIGH' | 'URGENT';
+type TaskNotice = 'ASSIGNED' | 'STARTED' | 'RESULT_SUBMITTED' | 'RESULT_ACCEPTED' | 'RESULT_RETURNED';
 export class FieldTasksService {
   constructor(private readonly pool: Pool) {}
   private async tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -35,6 +36,17 @@ export class FieldTasksService {
   private async event(c: PoolClient, search: string, actor: string, type: string, payload: object) {
     await c.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)', [search,actor,type,payload]);
   }
+  private async notify(c:PoolClient, search:string, group:string, task:string, reference:string, audience:'GROUP_LEAD'|'FIELD_LEAD', kind:TaskNotice) {
+    const recipients=audience==='GROUP_LEAD'
+      ? `SELECT l.user_id FROM field_group_leads l JOIN users u ON u.id=l.user_id AND u.active=true
+          JOIN search_members m ON m.search_id=l.search_id AND m.user_id=l.user_id WHERE l.search_id=$1 AND l.group_id=$2`
+      : `SELECT f.user_id FROM search_field_leads f JOIN users u ON u.id=f.user_id AND u.active=true
+          JOIN field_lead_eligibility e ON e.user_id=f.user_id WHERE f.search_id=$1
+          AND EXISTS(SELECT 1 FROM field_groups g WHERE g.id=$2 AND g.search_id=f.search_id)`;
+    await c.query(`INSERT INTO field_task_notifications(search_id,task_id,recipient_id,reference_id,audience,kind)
+      SELECT $1,$3,r.user_id,$4,$5,$6 FROM (${recipients}) r ON CONFLICT(recipient_id,kind,reference_id) DO NOTHING`,
+    [search,group,task,reference,audience,kind]);
+  }
   async create(actor:string, search:string, group:string, description:string, dueAt:string, priority:Priority, requestId:string) {
     return this.tx(async c => {
       await this.lockSearch(c,search); await this.fieldLead(c,search,actor);
@@ -55,6 +67,7 @@ export class FieldTasksService {
         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[search,group,description,dueAt,priority,actor,requestId]);
       const id = r.rows[0].id as string;
       await this.event(c,search,actor,'FIELD_TASK_CREATED',{taskId:id,groupId:group});
+      await this.notify(c,search,group,id,id,'GROUP_LEAD','ASSIGNED');
       return {taskId:id};
     });
   }
@@ -111,6 +124,7 @@ export class FieldTasksService {
       if (t.status !== 'ASSIGNED') throw httpErrors.conflict('Task is not awaiting acceptance');
       await c.query("UPDATE field_tasks SET status='IN_PROGRESS',accepted_by=$2,accept_request_id=$3 WHERE id=$1",[id,actor,requestId]);
       await this.event(c,search,actor,'FIELD_TASK_STARTED',{taskId:id});
+      await this.notify(c,search,t.group_id,id,id,'FIELD_LEAD','STARTED');
       return {accepted:true};
     });
   }
@@ -129,6 +143,7 @@ export class FieldTasksService {
       const r=await c.query('INSERT INTO field_task_results(task_id,submitted_by,result,submit_request_id) VALUES($1,$2,$3,$4) RETURNING id',[id,actor,result,requestId]);
       await c.query("UPDATE field_tasks SET status='REVIEW' WHERE id=$1",[id]);
       await this.event(c,search,actor,'FIELD_TASK_RESULT_SUBMITTED',{taskId:id,resultId:r.rows[0].id});
+      await this.notify(c,search,t.group_id,id,r.rows[0].id as string,'FIELD_LEAD','RESULT_SUBMITTED');
       return {resultId:r.rows[0].id as string};
     });
   }
@@ -150,6 +165,7 @@ export class FieldTasksService {
       const status=approve?'ACCEPTED':'IN_PROGRESS';
       await c.query('UPDATE field_tasks SET status=$2 WHERE id=$1',[id,status]);
       await this.event(c,search,actor,approve?'FIELD_TASK_RESULT_ACCEPTED':'FIELD_TASK_RESULT_RETURNED',{taskId:id,resultId});
+      await this.notify(c,search,t.group_id,id,resultId,'GROUP_LEAD',approve?'RESULT_ACCEPTED':'RESULT_RETURNED');
       return {resultId,decision};
     });
   }
