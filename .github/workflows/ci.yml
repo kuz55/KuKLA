@@ -108,7 +108,14 @@ jobs:
           cache-dependency-path: rebuild/go.sum
       - name: Test desktop engine against disposable server
         working-directory: rebuild
-        run: go test ./internal/httpapi -run '^TestRemoteSearchesRealServer$' -count=1
+        run: |
+          log="$RUNNER_TEMP/remote-integration-test.log"
+          if ! go test ./internal/httpapi -run '^TestRemoteSearchesRealServer$' -count=1 > "$log" 2>&1; then
+            cat "$log"
+            echo "::error title=Desktop server integration::$(tail -n 15 "$log" | tr '\n' ' ')"
+            exit 1
+          fi
+          cat "$log"
         env:
           KUKLA_DISPOSABLE_INTEGRATION: '1'
       - name: Show server log
