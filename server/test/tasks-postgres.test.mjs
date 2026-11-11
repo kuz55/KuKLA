@@ -28,14 +28,22 @@ test('group task lifecycle enforces roles, results, review and overdue without c
     }
     const base=`/api/v1/field-tasks/searches/${search}`, groupPath=`/groups/${group}/tasks`;
     const call=(user,method,path,payload)=>app.inject({method,url:base+path,payload,headers:user?{authorization:`Bearer ${tokens[user]}`}:{}});
-    const data={description:'Synthetic task',priority:'URGENT',dueAt:'2020-01-01T00:00:00Z'};
+    const data={requestId:randomUUID(),description:'Synthetic task',priority:'URGENT',dueAt:'2020-01-01T00:00:00Z'};
     assert.equal((await call(null,'POST',groupPath,data)).statusCode,401);
     assert.equal((await call(lead,'POST',groupPath,data)).statusCode,403);
+    assert.equal((await call(field,'POST',groupPath,{...data,requestId:undefined})).statusCode,400);
     assert.equal((await call(field,'POST',groupPath,{...data,dueAt:'2020-01-01'})).statusCode,400);
     assert.equal((await call(field,'POST',groupPath,{...data,description:'  '})).statusCode,400);
-    let response=await call(field,'POST',groupPath,data);
-    assert.equal(response.statusCode,200); assert.equal(response.headers['cache-control'],'no-store');
-    const id=response.json().taskId, task=`/tasks/${id}`;
+    const creation=await Promise.all([call(field,'POST',groupPath,data),call(field,'POST',groupPath,data)]);
+    assert.deepEqual(creation.map(r=>r.statusCode),[200,200]);
+    const id=creation[0].json().taskId, task=`/tasks/${id}`;
+    assert.equal(creation[1].json().taskId,id,'concurrent retries return the same task');
+    assert.equal(creation[0].headers['cache-control'],'no-store');
+    assert.equal((await call(field,'POST',groupPath,{...data,dueAt:'2020-01-01T03:00:00+03:00'})).json().taskId,id,'equivalent timestamps match');
+    assert.equal((await call(field,'POST',groupPath,{...data,description:'Different task'})).statusCode,409);
+    assert.equal((await call(field,'POST',`/groups/${randomUUID()}/tasks`,data)).statusCode,409);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE search_id=$1 AND type='FIELD_TASK_CREATED'",[search])).rows[0].n,1);
+    let response;
     assert.equal((await call(outsider,'GET',groupPath)).statusCode,403);
     let item=(await call(member,'GET',groupPath)).json().items[0];
     assert.equal(item.overdue,true); assert.equal(item.status,'ASSIGNED'); assert.equal(item.priority,'URGENT');
@@ -75,6 +83,9 @@ test('group task lifecycle enforces roles, results, review and overdue without c
     }}}};
     await assert.rejects(new FieldTasksService(failingPool).submit(lead,search,id,'Synthetic result'),/audit failure/);
     assert.equal((await pool.query('SELECT count(*)::int n FROM field_task_results WHERE task_id=$1',[id])).rows[0].n,0);
+    const retryData={...data,requestId:randomUUID(),dueAt:'2035-01-01T00:00:00Z'};
+    await assert.rejects(new FieldTasksService(failingPool).create(field,search,group,retryData.description,retryData.dueAt,retryData.priority,retryData.requestId),/audit failure/);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_tasks WHERE create_request_id=$1',[retryData.requestId])).rows[0].n,0,'task and request receipt roll back with audit');
     response=await call(lead,'POST',`${task}/results`,{result:'First result'});
     assert.equal(response.statusCode,200); let resultId=response.json().resultId;
     assert.equal((await call(member,'GET',`${task}/results`)).statusCode,403);
@@ -95,6 +106,9 @@ test('group task lifecycle enforces roles, results, review and overdue without c
     assert.equal((await call(lead,'POST',`${task}/results`,{result:'late'})).statusCode,409);
     await pool.query('UPDATE users SET active=false WHERE id=$1',[member]);
     assert.equal((await call(member,'GET',groupPath)).statusCode,401);
+    response=await call(field,'POST',groupPath,retryData);
+    assert.equal(response.statusCode,200,'request can retry after rolled-back creation');
+    assert.equal((await call(field,'POST',groupPath,retryData)).json().taskId,response.json().taskId);
     await pool.query("UPDATE searches SET status='COMPLETED' WHERE id=$1",[search]);
     assert.equal((await call(field,'POST',groupPath,data)).statusCode,409);
     const legacy=await app.inject({url:`/api/v1/searches/${search}/events`,headers:{authorization:`Bearer ${tokens[lead]}`}});

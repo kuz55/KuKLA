@@ -37,9 +37,9 @@ const tasksRoutes: FastifyPluginAsync = async app => {
   });
   app.post('/api/v1/field-tasks/notifications/:id/acknowledge',{preHandler:auth},async req=>inbox.acknowledge(req.user.id,parseId(req)));
   app.post(`${root}/groups/:groupId/tasks`,{preHandler:auth},async req=>{
-    const body=z.object({description:z.string().trim().min(1).max(4000),priority:z.enum(['NORMAL','HIGH','URGENT']),
+    const body=z.object({requestId:z.string().uuid(),description:z.string().trim().min(1).max(4000),priority:z.enum(['NORMAL','HIGH','URGENT']),
       dueAt:z.iso.datetime({offset:true}).refine(v=>!v.startsWith('0000-') && Number.isFinite(Date.parse(v)))}).strict().parse(req.body);
-    return service.create(req.user.id,parseId(req),groupId(req.params),body.description,body.dueAt,body.priority);
+    return service.create(req.user.id,parseId(req),groupId(req.params),body.description,body.dueAt,body.priority,body.requestId);
   });
   app.get(`${root}/groups/:groupId/tasks`,{preHandler:auth},async req=>{
     const q=page.parse(req.query); return service.list(req.user.id,parseId(req),groupId(req.params),q.after,q.limit);

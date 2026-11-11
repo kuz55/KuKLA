@@ -302,8 +302,14 @@ in the same transaction without copying description, result or return reason
 into the generic event log. All responses are `no-store`.
 
 Under `/api/v1/field-tasks/searches/:id`: `POST /groups/:groupId/tasks`
-accepts `description`, `priority`, `dueAt` (ISO 8601 with timezone); `GET` on
-the same path lists tasks. `POST /tasks/:taskId/accept`, `POST .../results`
+accepts a client-generated UUID `requestId`, `description`, `priority`, and
+`dueAt` (ISO 8601 with timezone); `GET` on the same path lists tasks. While the
+search is open, a currently authorized field lead repeating the same request ID
+and task data receives the original task ID without another task or audit event.
+The key is scoped to the search and creator; reuse with different task data
+returns 409. Equivalent timestamps with different offsets compare equal.
+Existing tasks created before migration 026 have no retry receipt. This is only
+creation deduplication, not an offline queue or conflict resolution. `POST /tasks/:taskId/accept`, `POST .../results`
 (`result`), and `POST .../decision` (`resultId`, `approve`; `reason` required
 only for rejection) perform transitions. `GET .../results` lists review
 history. List endpoints support UUID cursor `after` and `limit` up to 100.

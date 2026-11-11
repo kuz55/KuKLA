@@ -35,15 +35,24 @@ export class FieldTasksService {
   private async event(c: PoolClient, search: string, actor: string, type: string, payload: object) {
     await c.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)', [search,actor,type,payload]);
   }
-  async create(actor:string, search:string, group:string, description:string, dueAt:string, priority:Priority) {
+  async create(actor:string, search:string, group:string, description:string, dueAt:string, priority:Priority, requestId:string) {
     return this.tx(async c => {
       await this.lockSearch(c,search); await this.fieldLead(c,search,actor);
+      // The search lock serializes retries. Compare persisted values rather than
+      // storing a reversible or low-entropy hash of potentially sensitive text.
+      const previous = await c.query(`SELECT id,(group_id=$4 AND description=$5 AND due_at=$6::timestamptz AND priority=$7) AS matches
+        FROM field_tasks WHERE search_id=$1 AND created_by=$2 AND create_request_id=$3`,
+      [search,actor,requestId,group,description,dueAt,priority]);
+      if (previous.rowCount) {
+        if (!previous.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different task');
+        return {taskId:previous.rows[0].id as string};
+      }
       const g = await c.query(`SELECT 1 FROM field_groups g JOIN field_group_leads l ON l.group_id=g.id
         JOIN users u ON u.id=l.user_id AND u.active=true JOIN search_members m ON m.search_id=l.search_id AND m.user_id=l.user_id
         WHERE g.search_id=$1 AND g.id=$2 FOR SHARE OF g,l,u,m`, [search,group]);
       if (!g.rowCount) throw httpErrors.conflict('Group requires an active accepted lead');
-      const r = await c.query(`INSERT INTO field_tasks(search_id,group_id,description,due_at,priority,created_by)
-        VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[search,group,description,dueAt,priority,actor]);
+      const r = await c.query(`INSERT INTO field_tasks(search_id,group_id,description,due_at,priority,created_by,create_request_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[search,group,description,dueAt,priority,actor,requestId]);
       const id = r.rows[0].id as string;
       await this.event(c,search,actor,'FIELD_TASK_CREATED',{taskId:id,groupId:group});
       return {taskId:id};

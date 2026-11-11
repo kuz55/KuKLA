@@ -147,7 +147,7 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal((await call(lead,'POST',`${groupPath}/member-decision`,{proposalId:response.json().proposalId,approve:true})).statusCode,200);
     assert.equal((await call(lead,'GET',groupPath)).json().members.length,2);
     const taskBase=`/api/v1/field-tasks/searches/${searchId}`;
-    response=await call(lead,'POST',`${taskBase}/groups/${group.groupId}/tasks`,{description:'Synthetic task',priority:'HIGH',dueAt:'2020-01-01T00:00:00Z'});
+    response=await call(lead,'POST',`${taskBase}/groups/${group.groupId}/tasks`,{requestId:randomUUID(),description:'Synthetic task',priority:'HIGH',dueAt:'2020-01-01T00:00:00Z'});
     assert.equal(response.statusCode,200);
     const taskId=response.json().taskId, taskPath=`${taskBase}/tasks/${taskId}`;
     assert.equal((await call(outsider,'POST',`${taskPath}/accept`,{})).statusCode,200);
