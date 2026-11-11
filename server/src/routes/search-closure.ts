@@ -13,6 +13,13 @@ const searchClosureRoutes: FastifyPluginAsync = async app => {
     return reply.code(status).send({ error: status === 401 ? 'UNAUTHORIZED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : status === 409 ? 'CONFLICT' : 'ERROR' });
   });
   app.addHook('onSend', async (_req, reply, payload) => { reply.header('Cache-Control', 'no-store'); return payload; });
+  app.get('/api/v1/search-closure/searches/:id/audit', { preHandler: auth }, async req => {
+    const query = z.object({
+      before: z.string().refine(value => /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+    }).strict().parse(req.query);
+    return service.audit(req.user.id, parseId(req), query.before, query.limit);
+  });
   app.post('/api/v1/search-closure/searches/:id/confirm', { preHandler: auth }, async req => {
     z.object({}).strict().parse(req.body);
     return service.confirm(req.user.id, parseId(req));

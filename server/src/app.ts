@@ -58,7 +58,7 @@ export async function buildApp() {
     }
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: 'VALIDATION_ERROR',
@@ -79,8 +79,10 @@ export async function buildApp() {
       });
     }
 
-    app.log.error(err);
     const status = error.statusCode ?? 500;
+    // Database and plugin errors can embed submitted values, SQL parameters,
+    // URLs or credentials. Keep correlation and status, never the raw error.
+    if (status >= 500) req.log.error({ requestId: req.id, statusCode: status }, 'Request failed');
     return reply.code(status).send({
       error: status === 401 ? 'UNAUTHORIZED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : 'ERROR',
       message: status < 500 ? (error.message ?? 'Request failed') : 'Internal server error',

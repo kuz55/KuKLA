@@ -171,3 +171,19 @@ or secure unified authorization on legacy routes and audit events. A repeated
 close or reopen returns 409 rather than a delivery receipt. Other experimental
 workflows are not yet frozen when a search is closed. Do not enable for real
 personal data or use it as evidence of production readiness.
+
+The closure API also provides `GET /api/v1/search-closure/searches/:id/audit`
+for an active eligible coordinator assigned to that search. It returns only
+closure confirmation, close and reopen audit entries in descending event-ID
+order, using `limit` (1–100, default 50) and the returned `nextCursor` as
+`before`. Reasons can be sensitive, so field participants and unrelated users
+cannot read this endpoint. It is not a general audit viewer. Until permissions
+for other workflow events are defined, the legacy events and snapshot routes
+expose an explicit allowlist of legacy event types, not experimental or future
+unknown event types; those entries remain stored. The legacy event payloads and
+other routes still need a full privacy review and are not safe for real data.
+
+The application error handler logs a request identifier and status for server
+errors without serializing raw exceptions, which can contain database values.
+This deliberately reduces diagnostic detail; other components and logging paths
+still require review, and this is not a comprehensive data-protection guarantee.

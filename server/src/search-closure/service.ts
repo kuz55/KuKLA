@@ -30,6 +30,18 @@ export class SearchClosureService {
     await client.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)', [searchId,actor,type,payload]);
   }
 
+  async audit(actor: string, searchId: string, before?: string, limit = 50) {
+    return this.tx(async client => {
+      await this.lockSearch(client, searchId);
+      await this.coordinator(client, actor, searchId);
+      const result = await client.query(`SELECT id::text,user_id,type,payload,created_at FROM events
+        WHERE search_id=$1 AND type=ANY($2::text[]) AND ($3::bigint IS NULL OR id < $3::bigint)
+        ORDER BY id DESC LIMIT $4`, [searchId, ['SEARCH_CLOSURE_CONFIRMED','SEARCH_CLOSED','SEARCH_REOPENED'], before ?? null, limit + 1]);
+      const items = result.rows.slice(0, limit);
+      return { items, nextCursor: result.rows.length > limit ? items[items.length - 1].id as string : null };
+    });
+  }
+
   async confirm(actor: string, searchId: string) {
     return this.tx(async client => {
       // Match the ordering used by the field-lead service to avoid deadlocks.

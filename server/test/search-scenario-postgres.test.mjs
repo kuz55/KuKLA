@@ -92,7 +92,38 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal((await call(coordinator, 'POST', `${closure}/reopen`, {reason: 'New information'})).statusCode, 200);
     assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1', [searchId])).rows[0].status, 'PLANNED');
     assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 409);
+    // Legacy member-readable event streams must not accidentally expose the
+    // new workflows' audit reasons, including through the snapshot endpoint.
+    await pool.query("INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,'FUTURE_PRIVATE_EVENT',$3)", [searchId, coordinator, {reason:'synthetic-private-reason'}]);
+    for (const suffix of ['events', 'snapshot']) {
+      const legacy = await call(registrar, 'GET', `/api/v1/searches/${searchId}/${suffix}`);
+      assert.equal(legacy.statusCode, 200);
+      const events = suffix === 'events' ? legacy.json() : legacy.json().events;
+      assert.ok(events.some((entry) => entry.type === 'SEARCH_CREATED'));
+      assert.ok(!events.some((entry) => ['SEARCH_CLOSED','SEARCH_REOPENED','SEARCH_CLOSURE_CONFIRMED','FIELD_LEAD_ACCEPTED','FUTURE_PRIVATE_EVENT'].includes(entry.type)));
+      assert.ok(!legacy.body.includes('synthetic-private-reason'));
+    }
+    assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE search_id=$1 AND type IN ('SEARCH_CLOSED','SEARCH_REOPENED','FUTURE_PRIVATE_EVENT')", [searchId])).rows[0].n,3);
+    const audit = `${closure}/audit`;
+    assert.equal((await call(lead, 'GET', audit)).statusCode, 403);
+    assert.equal((await call(outsider, 'GET', audit)).statusCode, 403);
+    await pool.query('INSERT INTO search_coordinators(search_id,user_id,is_primary,assigned_by) VALUES($1,$2,false,$3)', [searchId,outsider,coordinator]);
+    assert.equal((await call(outsider, 'GET', audit)).statusCode, 200, 'additional coordinator has equal closure access');
+    await pool.query('DELETE FROM search_coordinators WHERE search_id=$1 AND user_id=$2', [searchId,outsider]);
+    assert.equal((await call(outsider, 'GET', audit)).statusCode, 403);
+    assert.equal((await call(coordinator, 'GET', `${audit}?before=not-a-number`)).statusCode, 400);
+    assert.equal((await call(coordinator, 'GET', `${audit}?before=9223372036854775808`)).statusCode, 400);
+    response = await call(coordinator, 'GET', `${audit}?limit=2`);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], 'no-store');
+    const auditPage = response.json();
+    assert.deepEqual(auditPage.items.map(x => x.type), ['SEARCH_REOPENED','SEARCH_CLOSED']);
+    assert.equal(auditPage.items[0].payload.reason, 'New information');
+    const nextAuditPage = (await call(coordinator, 'GET', `${audit}?limit=2&before=${auditPage.nextCursor}`)).json();
+    assert.deepEqual(nextAuditPage.items.map(x => x.type), ['SEARCH_CLOSURE_CONFIRMED']);
+    assert.equal(nextAuditPage.nextCursor, null);
     await pool.query('DELETE FROM coordinator_eligibility WHERE user_id=$1', [coordinator]);
+    assert.equal((await call(coordinator, 'GET', audit)).statusCode, 403);
     assert.equal((await call(coordinator, 'GET', reportList)).statusCode, 403);
   } finally {
     await app.close();

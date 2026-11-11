@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { pool } from '../config.js';
+import { legacyVisibleEventTypes } from '../legacy-events.js';
 import { audit, auth, parseId, requireSearchAccess, requireSearchManagement } from '../http.js';
 
 const eventRoutes: FastifyPluginAsync = async (app) => {
@@ -8,8 +9,8 @@ const eventRoutes: FastifyPluginAsync = async (app) => {
     const id = parseId(req);
     await requireSearchAccess(req, id);
     return (await pool.query(
-      'SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 ORDER BY e.created_at DESC LIMIT 500',
-      [id],
+      'SELECT e.*,u.name user_name FROM events e LEFT JOIN users u ON u.id=e.user_id WHERE e.search_id=$1 AND e.type=ANY($2::text[]) ORDER BY e.created_at DESC LIMIT 500',
+      [id, legacyVisibleEventTypes],
     )).rows;
   });
 
