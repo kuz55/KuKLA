@@ -6,18 +6,18 @@ import bcrypt from 'bcryptjs';
 // A deliberately partial integration test: real password login through intake
 // and coordinator claim through experimental closure. Tasks, SMS and UI are not covered.
 test('password login to intake, search creation and coordinator claim', async () => {
-  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE', 'KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS'];
+  const flags = ['KUKLA_ENABLE_EXPERIMENTAL_INTAKE', 'KUKLA_ENABLE_EXPERIMENTAL_COORDINATION', 'KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD', 'KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE', 'KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS', 'KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY'];
   const previous = flags.map((key) => process.env[key]);
   flags.forEach((key) => { process.env[key] = 'true'; });
-  // This scenario logs in six distinct synthetic actors from one test IP.
+  // This scenario logs in seven distinct synthetic actors from one test IP.
   // Rate limiting itself is covered separately with the production threshold.
   const previousRate = process.env.RATE_LIMIT_LOGIN_MAX;
   process.env.RATE_LIMIT_LOGIN_MAX = '100';
   const { buildApp } = await import('../dist/app.js');
   const { pool } = await import('../dist/config.js');
   const app = await buildApp();
-  const ids = Array.from({ length: 6 }, randomUUID);
-  const [operator, registrar, coordinator, outsider, lead, administrator] = ids;
+  const ids = Array.from({ length: 7 }, randomUUID);
+  const [operator, registrar, coordinator, outsider, lead, administrator, leader] = ids;
   const password = 'test-only-password-2026';
   let reportId, secondReportId, searchId;
   try {
@@ -27,8 +27,7 @@ test('password login to intake, search creation and coordinator claim', async ()
     }
     await pool.query("UPDATE users SET role='ADMIN' WHERE id=$1", [administrator]);
     await pool.query("INSERT INTO intake_permissions(user_id,permission) VALUES($1,'RECORD'),($2,'REGISTER')", [operator, registrar]);
-    await pool.query('INSERT INTO coordinator_eligibility(user_id) VALUES($1)', [coordinator]);
-    await pool.query('INSERT INTO field_lead_eligibility(user_id) VALUES($1)', [lead]);
+    await pool.query('INSERT INTO leadership_eligibility(user_id) VALUES($1)', [leader]);
     const tokens = new Map();
     for (const id of ids) {
       const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { login: `${id}@example.invalid`, password } });
@@ -37,6 +36,8 @@ test('password login to intake, search creation and coordinator claim', async ()
       tokens.set(id, res.json().token);
     }
     const call = (actor, method, url, payload, extra = {}) => app.inject({ method, url, payload, headers: { authorization: `Bearer ${tokens.get(actor)}`, ...extra } });
+    assert.equal((await call(leader, 'POST', `/api/v1/eligibility/users/${coordinator}/grant`, {kind:'COORDINATOR'})).statusCode,200);
+    assert.equal((await call(leader, 'POST', `/api/v1/eligibility/users/${lead}/grant`, {kind:'FIELD_LEAD'})).statusCode,200);
     const fields = { applicantName: 'Synthetic', applicantContact: '555-TEST', missingPersonName: null, lastSeenTime: null, lastSeenPlace: null, situation: null };
     const key = randomUUID();
     let response = await call(operator, 'POST', '/api/v1/intake/reports', fields, { 'idempotency-key': key });

@@ -223,3 +223,28 @@ If that database is unavailable, protected endpoints fail closed with HTTP 503
 rather than reporting a revoked session as 401. No raw database error is returned.
 An actually invalid or revoked session still receives 401. This distinction
 helps clients report outages without treating them as a credential failure.
+
+## Experimental leadership and eligibility management
+
+Migration 022 introduces `leadership_eligibility`, empty by default. An active
+user with that explicit authority can grant or revoke `COORDINATOR` and
+`FIELD_LEAD` operational eligibility through the development-only flag
+`KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY=true`. A legacy `LEADER` or system admin
+role alone does not imply it. There is no production bootstrap or interface for
+this authority; integration tests seed it directly into a disposable database.
+Do not establish it by modifying a real database.
+
+Authenticated `GET /api/v1/eligibility/users/:id` returns the target's active
+and two eligibility flags. `POST .../grant` and `POST .../revoke` accept
+`{"kind":"COORDINATOR"}` or `{"kind":"FIELD_LEAD"}`. Mutations and audit
+events are transactional; repeats without a change do not duplicate events.
+Grant requires an active target. All responses are `no-store`.
+
+**Temporary restriction:** revocation returns 409 if the target has relevant
+assignments or pending proposals/transfers; grant similarly refuses stale
+assignments left by out-of-band removal. This avoids silently breaking a
+handover or reviving old authority, but is not the complete agreed role-change
+process: current flows do not offer a safe removal for every situation,
+particularly unavailable coordinators. The global audit has no user-facing
+viewer yet. This is not a role-administration UI or a complete access matrix,
+and existing endpoints still use legacy permissions. Do not use real data.
