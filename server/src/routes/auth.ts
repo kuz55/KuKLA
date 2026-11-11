@@ -32,7 +32,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const user = result.rows[0] as User & { password_hash: string };
-    const token = app.jwt.sign(publicUser(user), { expiresIn: '12h' });
+    const token = app.jwt.sign({ ...publicUser(user), jti: crypto.randomUUID() }, { expiresIn: '12h' });
     await pool.query(
       `INSERT INTO sessions(user_id,token_hash,expires_at)
        VALUES($1,$2,now()+interval '12 hours')`,
@@ -105,7 +105,7 @@ const authRoutes: FastifyPluginAsync = async (app) => {
         [user.id, 'USER_INVITATION_ACCEPTED', { invitationId: invitation.id }],
       );
 
-      const sessionToken = app.jwt.sign(publicUser(user), { expiresIn: '12h' });
+      const sessionToken = app.jwt.sign({ ...publicUser(user), jti: crypto.randomUUID() }, { expiresIn: '12h' });
       await client.query(
         `INSERT INTO sessions(user_id,token_hash,expires_at)
          VALUES($1,$2,now()+interval '12 hours')`,
