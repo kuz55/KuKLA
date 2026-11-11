@@ -32,6 +32,14 @@ export async function buildApp() {
     trustProxy: TRUST_PROXY.length ? TRUST_PROXY : false,
   });
 
+  // Legacy API responses can include personal data, session tokens or invitation
+  // secrets. Apply the same policy to errors and unmatched API paths as well as
+  // successful responses; do not depend on every route remembering the header.
+  app.addHook('onSend', async (req, reply, payload) => {
+    const path = req.url.split('?', 1)[0];
+    if (path === '/api/v1' || path.startsWith('/api/v1/')) reply.header('Cache-Control', 'no-store');
+    return payload;
+  });
   app.addHook('onResponse', async (req, reply) => {
     req.log.info({ method: req.method, route: req.routeOptions.url ?? 'unmatched', statusCode: reply.statusCode, elapsedMs: reply.elapsedTime }, 'request completed');
   });

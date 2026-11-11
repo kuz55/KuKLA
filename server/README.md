@@ -2,6 +2,11 @@
 
 Fastify API. Run locally with `npm install && npm run dev`. Environment variables are documented in `.env.example`.
 
+All `/api/v1` responses, including authentication failures, validation errors
+and unknown routes, carry `Cache-Control: no-store`. This asks compliant clients
+and intermediaries not to store responses; it does not encrypt data, erase
+already cached copies or replace HTTPS, access controls and secure client storage.
+
 ## Experimental intake foundation (development only)
 
 Migrations 010–013 add storage and an internal handoff audit for initial
