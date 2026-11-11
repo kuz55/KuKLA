@@ -39,6 +39,18 @@ export class FieldGroupsService {
   private async event(c: PoolClient, searchId: string, actor: string, type: string, payload: object) {
     await c.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',[searchId,actor,type,payload]);
   }
+  private async notifyCandidate(c:PoolClient, searchId:string, groupId:string, proposalId:string, candidate:string) {
+    await c.query(`INSERT INTO field_group_lead_notifications(search_id,group_id,recipient_id,proposal_id,kind)
+      VALUES($1,$2,$3,$4,'LEAD_PROPOSED') ON CONFLICT(recipient_id,proposal_id,kind) DO NOTHING`,
+    [searchId,groupId,candidate,proposalId]);
+  }
+  private async notifyFieldLead(c:PoolClient, searchId:string, groupId:string, proposalId:string, accept:boolean) {
+    await c.query(`INSERT INTO field_group_lead_notifications(search_id,group_id,recipient_id,proposal_id,kind)
+      SELECT $1,$2,f.user_id,$3,$4 FROM search_field_leads f JOIN field_lead_eligibility e ON e.user_id=f.user_id
+      JOIN users u ON u.id=f.user_id AND u.active=true WHERE f.search_id=$1
+      ON CONFLICT(recipient_id,proposal_id,kind) DO NOTHING`,
+    [searchId,groupId,proposalId,accept?'LEAD_ACCEPTED':'LEAD_DECLINED']);
+  }
   async create(actor: string, searchId: string, title: string, candidate: string, requestId: string) {
     if (title.trim().length < 2 || title.trim().length > 200) throw httpErrors.badRequest('Invalid group title');
     return this.tx(async c => {
@@ -57,6 +69,7 @@ export class FieldGroupsService {
       await c.query(`INSERT INTO field_group_create_receipts(group_id,search_id,actor_id,request_id,initial_title,initial_candidate_id,proposal_id)
         VALUES($1,$2,$3,$4,$5,$6,$7)`,[id,searchId,actor,requestId,title.trim(),candidate,proposal.rows[0].id]);
       await this.event(c,searchId,actor,'FIELD_GROUP_CREATED',{groupId:id, candidateId:candidate, proposalId:proposal.rows[0].id});
+      await this.notifyCandidate(c,searchId,id,proposal.rows[0].id as string,candidate);
       return {groupId:id, proposalId:proposal.rows[0].id as string};
     });
   }
@@ -79,14 +92,16 @@ export class FieldGroupsService {
       await c.query(`INSERT INTO field_group_lead_proposal_receipts(proposal_id,group_id,search_id,actor_id,request_id,candidate_id)
         VALUES($1,$2,$3,$4,$5,$6)`,[proposal.rows[0].id,groupId,searchId,actor,requestId,candidate]);
       await this.event(c,searchId,actor,'FIELD_GROUP_LEAD_PROPOSED',{groupId,candidateId:candidate,proposalId:proposal.rows[0].id});
+      await this.notifyCandidate(c,searchId,groupId,proposal.rows[0].id as string,candidate);
       return {proposalId:proposal.rows[0].id as string};
     });
   }
   async myProposals(actor: string, searchId: string) {
     return this.tx(async c => {
       await this.lockSearch(c,searchId); await this.member(c,searchId,actor);
-      return (await c.query(`SELECT id,group_id,created_at FROM field_group_lead_proposals
-        WHERE search_id=$1 AND candidate_id=$2 ORDER BY created_at,id LIMIT 100`,[searchId,actor])).rows;
+      return (await c.query(`SELECT p.id,p.group_id,g.title,p.created_at FROM field_group_lead_proposals p
+        JOIN field_groups g ON g.id=p.group_id AND g.search_id=p.search_id
+        WHERE p.search_id=$1 AND p.candidate_id=$2 ORDER BY p.created_at,p.id LIMIT 100`,[searchId,actor])).rows;
     });
   }
   async list(actor: string, searchId: string, after?: string, limit = 50) {
@@ -158,6 +173,7 @@ export class FieldGroupsService {
         await c.query('INSERT INTO field_group_members(group_id,search_id,user_id) VALUES($1,$2,$3)',[groupId,searchId,actor]);
       }
       await this.event(c,searchId,actor,accept?'FIELD_GROUP_LEAD_ACCEPTED':'FIELD_GROUP_LEAD_DECLINED',{groupId,proposalId});
+      await this.notifyFieldLead(c,searchId,groupId,proposalId,accept);
       return {accepted:accept};
     });
   }

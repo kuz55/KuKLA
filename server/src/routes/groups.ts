@@ -3,9 +3,11 @@ import { z, ZodError } from 'zod';
 import { auth, parseId } from '../http.js';
 import { pool } from '../config.js';
 import { FieldGroupsService } from '../groups/service.js';
+import { GroupLeadInbox } from '../groups/inbox.js';
 
 const groupsRoutes: FastifyPluginAsync = async app => {
   const service = new FieldGroupsService(pool);
+  const inbox = new GroupLeadInbox(pool);
   const groupId = (params: unknown) => z.object({groupId:z.string().uuid()}).passthrough().parse(params).groupId;
   const action = z.enum(['ADD','REMOVE']);
   app.setErrorHandler((err,req,reply) => {
@@ -16,6 +18,11 @@ const groupsRoutes: FastifyPluginAsync = async app => {
   });
   app.addHook('onSend',async (_req,reply,payload) => {reply.header('Cache-Control','no-store'); return payload;});
   const root = '/api/v1/field-groups/searches/:id';
+  app.get('/api/v1/field-groups/notifications',{preHandler:auth},async req=>{
+    const q=z.object({after:z.string().uuid().optional(),limit:z.coerce.number().int().min(1).max(100).default(50)}).strict().parse(req.query);
+    return inbox.list(req.user.id,q.after,q.limit);
+  });
+  app.post('/api/v1/field-groups/notifications/:id/acknowledge',{preHandler:auth},async req=>inbox.acknowledge(req.user.id,parseId(req)));
   app.get(`${root}/groups`,{preHandler:auth},async req => {
     const query=z.object({after:z.string().uuid().optional(),limit:z.coerce.number().int().min(1).max(100).default(50)}).strict().parse(req.query);
     return service.list(req.user.id,parseId(req),query.after,query.limit);

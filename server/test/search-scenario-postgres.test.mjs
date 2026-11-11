@@ -141,7 +141,10 @@ test('password login to intake, search creation and coordinator claim', async ()
     response = await call(lead,'POST',`${groupBase}/groups`,{requestId:randomUUID(),title:'Synthetic group',candidateId:outsider});
     assert.equal(response.statusCode,200);
     const group = response.json(), groupPath = `${groupBase}/groups/${group.groupId}`;
+    const groupInbox='/api/v1/field-groups/notifications';
+    assert.ok((await call(outsider,'GET',groupInbox)).json().items.some(x=>x.proposal_id===group.proposalId && x.kind==='LEAD_PROPOSED'));
     assert.equal((await call(outsider,'POST',`${groupPath}/lead-response`,{proposalId:group.proposalId,accept:true})).statusCode,200);
+    assert.ok((await call(lead,'GET',groupInbox)).json().items.some(x=>x.proposal_id===group.proposalId && x.kind==='LEAD_ACCEPTED'));
     response = await call(outsider,'POST',`${groupPath}/member-proposals`,{requestId:randomUUID(),userId:lead,action:'ADD'});
     assert.equal(response.statusCode,200);
     assert.equal((await call(lead,'POST',`${groupPath}/member-decision`,{proposalId:response.json().proposalId,approve:true})).statusCode,200);

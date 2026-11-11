@@ -285,7 +285,8 @@ same proposal ID even after resolution, and a changed group or candidate under
 the same key returns 409. Earlier proposals have no such receipt. Field lead and confirmed group leads
 can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
 `GET /groups/:groupId`; roster changes use `POST .../members/change`,
-`POST .../member-proposals` and `POST .../member-decision`. Migration 032
+`POST .../member-proposals` and `POST .../member-decision`. A candidate's
+pending proposals include the group title. Migration 032
 adds retry receipts for roster proposals and direct changes (each requires a
 client-generated UUID `requestId`) and for proposal decisions (identified by
 `proposalId`). Identical retries by the same currently authorized actor return
@@ -296,8 +297,21 @@ group leads can read `GET /groups/:groupId/audit` with `before` (event ID) and
 `limit`, returning only selected group event types and fields. See the route
 schemas for exact bodies. Responses are `no-store`.
 
+Migration 033 adds a private group-lead inbox: an invitation creates an entry
+for its candidate, and an acceptance or refusal creates one for the current
+active eligible field lead, when one exists. These entries are committed with
+the workflow change; a database write failure rolls the change back. Use
+`GET /api/v1/field-groups/notifications` (`after`, `limit`) and
+`POST /api/v1/field-groups/notifications/:id/acknowledge`. Responses contain
+identifiers and kind, not group text. Entries are visible only while the search
+is open and the recipient still has the relevant current role or pending
+invitation. Duplicate command receipts do not create duplicate notifications.
+If there is no eligible field lead at the time of response, no response entry
+is created. This inbox is **not device delivery**, has no UI and does not
+supply push, delivery retries, escalation or read guarantees.
+
 This is **not a complete group process**: confirmed-lead replacement/removal,
-notifications, a group-event audit UI, an offline queue, conflict resolution
+notification delivery, a group-event audit UI, an offline queue, conflict resolution
 and client screens are missing. The separate task experiment below is incomplete.
 Migration 030 retains the candidate's lead-proposal response: the same candidate
 may repeat the same acceptance or rejection while still an active search member
