@@ -72,8 +72,17 @@ test('field groups require accepted group lead and field lead approval of member
     memberProposal=response.json().proposalId;
     assert.equal((await call(fieldLead,'POST',`${g}/member-decision`,{proposalId:memberProposal,approve:false})).statusCode,200);
     assert.equal((await call(fieldLead,'GET',g)).json().members.length,2);
-    assert.equal((await call(fieldLead,'POST',`${g}/members/change`,{userId:searcher,action:'REMOVE'})).statusCode,200);
+    await pool.query('UPDATE users SET active=false WHERE id=$1',[searcher]);
+    response=await call(groupLead,'POST',`${g}/member-proposals`,{userId:searcher,action:'REMOVE'});
+    assert.equal(response.statusCode,200,'inactive members can be proposed for removal');
+    assert.equal((await call(fieldLead,'POST',`${g}/member-decision`,{proposalId:response.json().proposalId,approve:true})).statusCode,200);
     assert.equal((await call(fieldLead,'GET',g)).json().members.length,1);
+    assert.equal((await call(fieldLead,'POST',`${g}/members/change`,{userId:searcher,action:'ADD'})).statusCode,404,'inactive members cannot be added');
+    await pool.query('UPDATE users SET active=true WHERE id=$1',[searcher]);
+    assert.equal((await call(fieldLead,'POST',`${g}/members/change`,{userId:searcher,action:'ADD'})).statusCode,200);
+    await pool.query('UPDATE users SET active=false WHERE id=$1',[searcher]);
+    assert.equal((await call(fieldLead,'POST',`${g}/members/change`,{userId:searcher,action:'REMOVE'})).statusCode,200,'field lead can directly remove inactive member');
+    await pool.query('UPDATE users SET active=true WHERE id=$1',[searcher]);
     // Declined lead appointment can be reissued by the field lead.
     response=await call(fieldLead,'POST','/groups',{title:'Group B',candidateId:groupLead});
     const b=response.json(); const bpath=`/groups/${b.groupId}`;

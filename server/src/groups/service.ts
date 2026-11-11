@@ -25,10 +25,10 @@ export class FieldGroupsService {
     const r = await c.query('SELECT id FROM field_groups WHERE search_id=$1 AND id=$2',[searchId,groupId]);
     if (!r.rowCount) throw httpErrors.notFound('Group not found');
   }
-  private async member(c: PoolClient, searchId: string, target: string) {
+  private async member(c: PoolClient, searchId: string, target: string, requireActive = true) {
     const r = await c.query(`SELECT m.user_id FROM search_members m JOIN users u ON u.id=m.user_id
-      WHERE m.search_id=$1 AND m.user_id=$2 AND u.active=true FOR SHARE OF m,u`,[searchId,target]);
-    if (!r.rowCount) throw httpErrors.notFound('Active search member not found');
+      WHERE m.search_id=$1 AND m.user_id=$2 AND ($3::boolean = false OR u.active=true) FOR SHARE OF m,u`,[searchId,target,requireActive]);
+    if (!r.rowCount) throw httpErrors.notFound(requireActive ? 'Active search member not found' : 'Search member not found');
   }
   private async groupLead(c: PoolClient, searchId: string, groupId: string, actor: string) {
     const r = await c.query(`SELECT l.user_id FROM field_group_leads l
@@ -115,7 +115,8 @@ export class FieldGroupsService {
     });
   }
   async change(c: PoolClient, searchId: string, groupId: string, target: string, action: Action) {
-    await this.member(c,searchId,target);
+    // An inactive person cannot be added, but must still be removable from a roster.
+    await this.member(c,searchId,target,action === 'ADD');
     if (action === 'ADD') {
       const added = await c.query(`INSERT INTO field_group_members(group_id,search_id,user_id) VALUES($1,$2,$3)
         ON CONFLICT(group_id,user_id) DO NOTHING RETURNING user_id`,[groupId,searchId,target]);
@@ -139,7 +140,7 @@ export class FieldGroupsService {
   }
   async propose(actor: string, searchId: string, groupId: string, target: string, action: Action) {
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.groupLead(c,searchId,groupId,actor); await this.member(c,searchId,target);
+      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.groupLead(c,searchId,groupId,actor); await this.member(c,searchId,target,action === 'ADD');
       const present = await c.query('SELECT 1 FROM field_group_members WHERE group_id=$1 AND user_id=$2',[groupId,target]);
       if ((action === 'ADD') === Boolean(present.rowCount)) throw httpErrors.conflict('Change does not match current membership');
       if (action === 'REMOVE' && actor === target) throw httpErrors.conflict('Group lead cannot be removed by this operation');
