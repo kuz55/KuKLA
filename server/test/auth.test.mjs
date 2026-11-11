@@ -52,6 +52,7 @@ test('login with valid credentials returns token', async () => {
   await registerUser(email, password);
   const r = await loginUser(email, password);
   assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   const data = await r.json();
   assert.ok(data.token);
   assert.ok(data.token.length > 100);
@@ -130,6 +131,7 @@ test('/me with valid token returns user data', async () => {
     headers: { Authorization: `Bearer ${token}` },
   });
   assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   const data = await r.json();
   assert.equal(data.email, email);
   assert.equal(data.role, 'SEARCHER');
