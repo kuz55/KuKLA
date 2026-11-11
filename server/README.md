@@ -308,9 +308,23 @@ the same path lists tasks. `POST /tasks/:taskId/accept`, `POST .../results`
 only for rejection) perform transitions. `GET .../results` lists review
 history. List endpoints support UUID cursor `after` and `limit` up to 100.
 
-**Not a complete task system:** there is no notification delivery or overdue
-worker, task edit/cancellation, individual work distribution, offline retry
-or conflict resolution, UI or urgent text/icon presentation. Closed searches
+Migration 025 adds a private overdue inbox. With both the tasks flag and
+`KUKLA_ENABLE_EXPERIMENTAL_TASK_REMINDERS=true`, a best-effort in-process
+worker scans every 30 seconds while the application runs. It creates at most
+one entry per overdue task and current active lead recipient, including both
+the field lead and group lead when available. Concurrent scans deduplicate;
+failed transactions can retry. `GET /api/v1/field-tasks/notifications` lists
+currently applicable unread entries, and `POST /api/v1/field-tasks/notifications/:id/acknowledge`
+acknowledges one. Entries contain identifiers, not task text; they are hidden
+when the task is accepted, search closed, or the recipient loses the role.
+An acknowledged entry is not reissued to that recipient for the same task.
+This is **not notification delivery**: no push, client UI, delivery retry,
+read guarantee or monitoring exists, and the worker does nothing when stopped.
+The period is a development polling interval, not an agreed service level.
+
+**Not a complete task system:** there is no notification delivery, task
+edit/cancellation, individual work distribution, offline retry or conflict
+resolution, UI or urgent text/icon presentation. Closed searches
 are inaccessible through this experimental API; duplicate mutations can return
 409 instead of a retry receipt. Legacy task routes remain separate and do not
 enforce this workflow. Do not use real personal data or operationally depend on

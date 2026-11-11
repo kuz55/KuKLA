@@ -4,6 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { buildApp } from '../dist/app.js';
 import { pool } from '../dist/config.js';
 import { FieldTasksService } from '../dist/tasks/service.js';
+import { TaskOverdueInbox } from '../dist/tasks/overdue.js';
 
 test('group task lifecycle enforces roles, results, review and overdue without changing status', async () => {
   const old=process.env.KUKLA_ENABLE_EXPERIMENTAL_TASKS;
@@ -38,6 +39,32 @@ test('group task lifecycle enforces roles, results, review and overdue without c
     assert.equal((await call(outsider,'GET',groupPath)).statusCode,403);
     let item=(await call(member,'GET',groupPath)).json().items[0];
     assert.equal(item.overdue,true); assert.equal(item.status,'ASSIGNED'); assert.equal(item.priority,'URGENT');
+    const inbox=new TaskOverdueInbox(pool);
+    const brokenInboxPool={query:(...args)=>pool.query(...args),connect:async()=>{const c=await pool.connect();return {
+      release:()=>c.release(),query:async(sql,params)=>{
+        if (sql.startsWith('INSERT INTO field_task_overdue_notifications')) { await c.query(sql,params); throw new Error('inbox failure'); }
+        return c.query(sql,params);
+      }
+    };}};
+    await assert.rejects(new TaskOverdueInbox(brokenInboxPool).process(),/inbox failure/);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_task_overdue_notifications WHERE task_id=$1',[id])).rows[0].n,0,'failed notification batch rolls back');
+    await Promise.all([inbox.process(),inbox.process()]);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_task_overdue_notifications WHERE task_id=$1',[id])).rows[0].n,2,'concurrent scans must not duplicate recipients');
+    const notification=async user=>app.inject({url:'/api/v1/field-tasks/notifications',headers:{authorization:`Bearer ${tokens[user]}`}});
+    const notifyField=await notification(field), notifyLead=await notification(lead);
+    assert.equal(notifyField.headers['cache-control'],'no-store');
+    assert.equal(notifyField.json().items.filter(x=>x.task_id===id).length,1);
+    await pool.query('DELETE FROM field_lead_eligibility WHERE user_id=$1',[field]);
+    assert.equal((await notification(field)).json().items.length,0,'lost eligibility hides earlier notifications');
+    await pool.query('INSERT INTO field_lead_eligibility VALUES($1)',[field]);
+    const notice=notifyLead.json().items.find(x=>x.task_id===id).id;
+    assert.equal((await notification(member)).json().items.length,0);
+    assert.equal((await app.inject({method:'POST',url:`/api/v1/field-tasks/notifications/${notice}/acknowledge`,headers:{authorization:`Bearer ${tokens[member]}`}})).statusCode,404);
+    const ack=()=>app.inject({method:'POST',url:`/api/v1/field-tasks/notifications/${notice}/acknowledge`,headers:{authorization:`Bearer ${tokens[lead]}`}});
+    assert.equal((await ack()).statusCode,200); assert.equal((await ack()).statusCode,200);
+    assert.equal((await notification(lead)).json().items.length,0);
+    await inbox.process();
+    assert.equal((await notification(lead)).json().items.length,0,'acknowledged reminder is not duplicated');
     assert.equal((await call(member,'POST',`${task}/accept`)).statusCode,403);
     assert.equal((await call(lead,'POST',`${task}/results`,{result:'early'})).statusCode,409);
     const accepting=await Promise.all([call(lead,'POST',`${task}/accept`),call(lead,'POST',`${task}/accept`)]);
@@ -60,6 +87,9 @@ test('group task lifecycle enforces roles, results, review and overdue without c
     assert.equal((await call(field,'POST',`${task}/decision`,{resultId:randomUUID(),approve:true})).statusCode,404);
     assert.equal((await call(field,'POST',`${task}/decision`,{resultId,approve:true})).statusCode,200);
     item=(await call(member,'GET',groupPath)).json().items[0]; assert.equal(item.status,'ACCEPTED'); assert.equal(item.overdue,false);
+    assert.equal((await notification(field)).json().items.filter(x=>x.task_id===id).length,0,'accepted task is no longer shown as overdue');
+    await inbox.process();
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_task_overdue_notifications WHERE task_id=$1',[id])).rows[0].n,2);
     assert.equal((await call(lead,'GET',`${task}/results?limit=1`)).json().items.length,1);
     assert.ok((await call(lead,'GET',`${task}/results?limit=1`)).json().nextCursor);
     assert.equal((await call(lead,'POST',`${task}/results`,{result:'late'})).statusCode,409);
