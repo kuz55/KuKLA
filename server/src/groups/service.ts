@@ -39,13 +39,23 @@ export class FieldGroupsService {
   private async event(c: PoolClient, searchId: string, actor: string, type: string, payload: object) {
     await c.query('INSERT INTO events(search_id,user_id,type,payload) VALUES($1,$2,$3,$4)',[searchId,actor,type,payload]);
   }
-  async create(actor: string, searchId: string, title: string, candidate: string) {
+  async create(actor: string, searchId: string, title: string, candidate: string, requestId: string) {
     if (title.trim().length < 2 || title.trim().length > 200) throw httpErrors.badRequest('Invalid group title');
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor); await this.member(c,searchId,candidate);
+      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor);
+      const previous=await c.query(`SELECT group_id,proposal_id,(initial_title=$4 AND initial_candidate_id=$5) AS matches
+        FROM field_group_create_receipts WHERE search_id=$1 AND actor_id=$2 AND request_id=$3`,
+      [searchId,actor,requestId,title.trim(),candidate]);
+      if (previous.rowCount) {
+        if (!previous.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different group');
+        return {groupId:previous.rows[0].group_id as string,proposalId:previous.rows[0].proposal_id as string};
+      }
+      await this.member(c,searchId,candidate);
       const group = await c.query('INSERT INTO field_groups(search_id,title,created_by) VALUES($1,$2,$3) RETURNING id',[searchId,title.trim(),actor]);
       const id = group.rows[0].id as string;
       const proposal = await c.query('INSERT INTO field_group_lead_proposals(group_id,search_id,candidate_id,proposed_by) VALUES($1,$2,$3,$4) RETURNING id',[id,searchId,candidate,actor]);
+      await c.query(`INSERT INTO field_group_create_receipts(group_id,search_id,actor_id,request_id,initial_title,initial_candidate_id,proposal_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7)`,[id,searchId,actor,requestId,title.trim(),candidate,proposal.rows[0].id]);
       await this.event(c,searchId,actor,'FIELD_GROUP_CREATED',{groupId:id, candidateId:candidate, proposalId:proposal.rows[0].id});
       return {groupId:id, proposalId:proposal.rows[0].id as string};
     });

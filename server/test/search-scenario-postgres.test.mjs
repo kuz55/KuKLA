@@ -138,7 +138,7 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal(accessLog.body.includes('555-TEST'),false);
     await pool.query('INSERT INTO search_members(search_id,user_id) VALUES($1,$2)', [searchId,outsider]);
     const groupBase = `/api/v1/field-groups/searches/${searchId}`;
-    response = await call(lead,'POST',`${groupBase}/groups`,{title:'Synthetic group',candidateId:outsider});
+    response = await call(lead,'POST',`${groupBase}/groups`,{requestId:randomUUID(),title:'Synthetic group',candidateId:outsider});
     assert.equal(response.statusCode,200);
     const group = response.json(), groupPath = `${groupBase}/groups/${group.groupId}`;
     assert.equal((await call(outsider,'POST',`${groupPath}/lead-response`,{proposalId:group.proposalId,accept:true})).statusCode,200);

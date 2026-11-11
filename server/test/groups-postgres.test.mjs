@@ -32,12 +32,19 @@ test('field groups require accepted group lead and field lead approval of member
     }
     const base=`/api/v1/field-groups/searches/${search}`;
     const call=(actor,method,path,payload)=>app.inject({method,url:base+path,payload,headers:actor?{authorization:`Bearer ${tokens[actor]}`}:{}});
-    assert.equal((await call(null,'POST','/groups',{title:'Test',candidateId:groupLead})).statusCode,401);
-    assert.equal((await call(coordinator,'POST','/groups',{title:'Test',candidateId:groupLead})).statusCode,403);
-    assert.equal((await call(fieldLead,'POST','/groups',{title:'Test',candidateId:outsider})).statusCode,404);
-    let response=await call(fieldLead,'POST','/groups',{title:'Group A',candidateId:groupLead});
-    assert.equal(response.statusCode,200); assert.equal(response.headers['cache-control'],'no-store');
+    const data={requestId:randomUUID(),title:'Group A',candidateId:groupLead};
+    assert.equal((await call(null,'POST','/groups',data)).statusCode,401);
+    assert.equal((await call(coordinator,'POST','/groups',data)).statusCode,403);
+    assert.equal((await call(fieldLead,'POST','/groups',{...data,requestId:undefined})).statusCode,400);
+    assert.equal((await call(fieldLead,'POST','/groups',{...data,candidateId:outsider})).statusCode,404);
+    const creates=await Promise.all([call(fieldLead,'POST','/groups',data),call(fieldLead,'POST','/groups',data)]);
+    assert.deepEqual(creates.map(x=>x.statusCode),[200,200]);
+    let response=creates[0]; assert.equal(response.headers['cache-control'],'no-store');
     const {groupId,proposalId}=response.json(); const g=`/groups/${groupId}`;
+    assert.deepEqual(creates[1].json(),{groupId,proposalId});
+    assert.equal((await call(fieldLead,'POST','/groups',{...data,title:'Different'})).statusCode,409);
+    assert.equal((await call(fieldLead,'POST','/groups',{...data,candidateId:searcher})).statusCode,409);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE search_id=$1 AND type='FIELD_GROUP_CREATED'",[search])).rows[0].n,1);
     assert.equal((await call(outsider,'GET',g)).statusCode,403);
     assert.equal((await call(groupLead,'GET','/my-lead-proposals')).json()[0].id,proposalId);
     assert.equal((await call(fieldLead,'GET','/groups')).json().items.length,1);
@@ -46,6 +53,12 @@ test('field groups require accepted group lead and field lead approval of member
     assert.equal((await call(groupLead,'POST',`${g}/member-proposals`,{userId:searcher,action:'ADD'})).statusCode,403);
     const acceptance=await Promise.all([call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:true}),call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:true})]);
     assert.deepEqual(acceptance.map(x=>x.statusCode).sort(),[200,404]);
+    assert.deepEqual((await call(fieldLead,'POST','/groups',data)).json(),{groupId,proposalId},'creation receipt survives lead acceptance');
+    await pool.query("UPDATE field_groups SET title='Changed title' WHERE id=$1",[groupId]);
+    assert.deepEqual((await call(fieldLead,'POST','/groups',data)).json(),{groupId,proposalId},'receipt uses immutable initial data');
+    await pool.query('DELETE FROM field_lead_eligibility WHERE user_id=$1',[fieldLead]);
+    assert.equal((await call(fieldLead,'POST','/groups',data)).statusCode,403,'receipt requires current field-lead eligibility');
+    await pool.query('INSERT INTO field_lead_eligibility VALUES($1)',[fieldLead]);
     assert.equal((await pool.query("SELECT count(*)::int n FROM events WHERE search_id=$1 AND type='FIELD_GROUP_LEAD_ACCEPTED'",[search])).rows[0].n,1);
     response=await call(fieldLead,'GET',g);
     assert.equal(response.json().lead.user_id,groupLead);
@@ -98,14 +111,17 @@ test('field groups require accepted group lead and field lead approval of member
     assert.equal((await call(fieldLead,'POST',`${g}/members/change`,{userId:searcher,action:'REMOVE'})).statusCode,200,'field lead can directly remove inactive member');
     await pool.query('UPDATE users SET active=true WHERE id=$1',[searcher]);
     // Declined lead appointment can be reissued by the field lead.
-    response=await call(fieldLead,'POST','/groups',{title:'Group B',candidateId:groupLead});
+    const groupB={requestId:randomUUID(),title:'Group B',candidateId:groupLead};
+    await assert.rejects(new FieldGroupsService(failingPool).create(fieldLead,search,groupB.title,groupB.candidateId,groupB.requestId),/audit failure/);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_group_create_receipts WHERE request_id=$1',[groupB.requestId])).rows[0].n,0,'receipt rolls back with audit');
+    response=await call(fieldLead,'POST','/groups',groupB);
     const b=response.json(); const bpath=`/groups/${b.groupId}`;
     assert.equal((await call(groupLead,'POST',`${bpath}/lead-response`,{proposalId:b.proposalId,accept:false})).statusCode,200);
     response=await call(fieldLead,'POST',`${bpath}/lead-proposals`,{candidateId:searcher});
     assert.equal(response.statusCode,200);
     assert.equal((await call(searcher,'POST',`${bpath}/lead-response`,{proposalId:response.json().proposalId,accept:true})).statusCode,200);
     await pool.query("UPDATE searches SET status='COMPLETED' WHERE id=$1",[search]);
-    assert.equal((await call(fieldLead,'POST','/groups',{title:'closed',candidateId:searcher})).statusCode,409);
+    assert.equal((await call(fieldLead,'POST','/groups',data)).statusCode,409,'receipts require the search to be open');
     const legacy=await app.inject({url:`/api/v1/searches/${search}/events`,headers:{authorization:`Bearer ${tokens[groupLead]}`}});
     assert.equal(legacy.statusCode,200);
     assert.ok(!legacy.json().some(x=>x.type.startsWith('FIELD_GROUP_')));

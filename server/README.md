@@ -269,7 +269,14 @@ group or group proposal; database constraints also prevent dangling references.
 Deleting an entire search still cascades its groups.
 
 Routes are under `/api/v1/field-groups/searches/:id`. The field lead creates a
-group with `POST /groups` (`title`, `candidateId`). A candidate reads
+group with `POST /groups` (`requestId`, `title`, `candidateId`). Migration 029
+stores an immutable creation receipt: retrying identical data with the same
+client-generated UUID returns the original group and proposal IDs, even after
+the proposal is resolved, without repeating the creation event. Reusing the
+key with changed data returns 409. The key is scoped to search and creator;
+retries require current field-lead access and an open search. The returned
+proposal ID is a historical receipt, not proof that it is still pending.
+Groups predating migration 029 have no such receipt. A candidate reads
 `GET /my-lead-proposals` and decides with `POST /groups/:groupId/lead-response`
 (`proposalId`, `accept`). The field lead can propose another candidate with
 `POST /groups/:groupId/lead-proposals`. Field lead and confirmed group leads

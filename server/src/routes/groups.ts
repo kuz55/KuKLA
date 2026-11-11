@@ -21,8 +21,8 @@ const groupsRoutes: FastifyPluginAsync = async app => {
     return service.list(req.user.id,parseId(req),query.after,query.limit);
   });
   app.post(`${root}/groups`,{preHandler:auth},async req => {
-    const body = z.object({title:z.string().trim().min(2).max(200),candidateId:z.string().uuid()}).strict().parse(req.body);
-    return service.create(req.user.id,parseId(req),body.title,body.candidateId);
+    const body = z.object({requestId:z.string().uuid(),title:z.string().trim().min(2).max(200),candidateId:z.string().uuid()}).strict().parse(req.body);
+    return service.create(req.user.id,parseId(req),body.title,body.candidateId,body.requestId);
   });
   app.get(`${root}/my-lead-proposals`,{preHandler:auth},async req => service.myProposals(req.user.id,parseId(req)));
   app.get(`${root}/groups/:groupId`,{preHandler:auth},async req => service.groupState(req.user.id,parseId(req),groupId(req.params)));
