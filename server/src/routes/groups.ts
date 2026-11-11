@@ -40,12 +40,12 @@ const groupsRoutes: FastifyPluginAsync = async app => {
     return service.respond(req.user.id,parseId(req),groupId(req.params),body.proposalId,body.accept);
   });
   app.post(`${root}/groups/:groupId/members/change`,{preHandler:auth},async req => {
-    const body=z.object({userId:z.string().uuid(),action}).strict().parse(req.body);
-    return service.apply(req.user.id,parseId(req),groupId(req.params),body.userId,body.action);
+    const body=z.object({requestId:z.string().uuid(),userId:z.string().uuid(),action}).strict().parse(req.body);
+    return service.apply(req.user.id,parseId(req),groupId(req.params),body.userId,body.action,body.requestId);
   });
   app.post(`${root}/groups/:groupId/member-proposals`,{preHandler:auth},async req => {
-    const body=z.object({userId:z.string().uuid(),action}).strict().parse(req.body);
-    return service.propose(req.user.id,parseId(req),groupId(req.params),body.userId,body.action);
+    const body=z.object({requestId:z.string().uuid(),userId:z.string().uuid(),action}).strict().parse(req.body);
+    return service.propose(req.user.id,parseId(req),groupId(req.params),body.userId,body.action,body.requestId);
   });
   app.post(`${root}/groups/:groupId/member-decision`,{preHandler:auth},async req => {
     const body=z.object({proposalId:z.string().uuid(),approve:z.boolean()}).strict().parse(req.body);

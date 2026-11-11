@@ -285,13 +285,19 @@ same proposal ID even after resolution, and a changed group or candidate under
 the same key returns 409. Earlier proposals have no such receipt. Field lead and confirmed group leads
 can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
 `GET /groups/:groupId`; roster changes use `POST .../members/change`,
-`POST .../member-proposals` and `POST .../member-decision`. Current field and
+`POST .../member-proposals` and `POST .../member-decision`. Migration 032
+adds retry receipts for roster proposals and direct changes (each requires a
+client-generated UUID `requestId`) and for proposal decisions (identified by
+`proposalId`). Identical retries by the same currently authorized actor return
+the original receipt; changing the data or decision returns 409. Receipts are
+historical: retrying a superseded proposal or a change does not reinstate it.
+Commands completed before migration 032 have no receipt. Current field and
 group leads can read `GET /groups/:groupId/audit` with `before` (event ID) and
 `limit`, returning only selected group event types and fields. See the route
 schemas for exact bodies. Responses are `no-store`.
 
 This is **not a complete group process**: confirmed-lead replacement/removal,
-notifications, a group-event audit UI, offline retry for roster changes
+notifications, a group-event audit UI, an offline queue, conflict resolution
 and client screens are missing. The separate task experiment below is incomplete.
 Migration 030 retains the candidate's lead-proposal response: the same candidate
 may repeat the same acceptance or rejection while still an active search member

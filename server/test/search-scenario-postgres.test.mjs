@@ -142,7 +142,7 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal(response.statusCode,200);
     const group = response.json(), groupPath = `${groupBase}/groups/${group.groupId}`;
     assert.equal((await call(outsider,'POST',`${groupPath}/lead-response`,{proposalId:group.proposalId,accept:true})).statusCode,200);
-    response = await call(outsider,'POST',`${groupPath}/member-proposals`,{userId:lead,action:'ADD'});
+    response = await call(outsider,'POST',`${groupPath}/member-proposals`,{requestId:randomUUID(),userId:lead,action:'ADD'});
     assert.equal(response.statusCode,200);
     assert.equal((await call(lead,'POST',`${groupPath}/member-decision`,{proposalId:response.json().proposalId,approve:true})).statusCode,200);
     assert.equal((await call(lead,'GET',groupPath)).json().members.length,2);

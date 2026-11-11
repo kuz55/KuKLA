@@ -175,25 +175,44 @@ export class FieldGroupsService {
       if (!removed.rowCount) throw httpErrors.conflict('Not a group member');
     }
   }
-  async apply(actor: string, searchId: string, groupId: string, target: string, action: Action) {
+  async apply(actor: string, searchId: string, groupId: string, target: string, action: Action, requestId:string) {
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor); await this.group(c,searchId,groupId);
-      await this.change(c,searchId,groupId,target,action);
+      await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor);
+      const previous=await c.query(`SELECT (group_id=$4 AND target_id=$5 AND action=$6) AS matches
+        FROM field_group_member_change_receipts WHERE search_id=$1 AND actor_id=$2 AND request_id=$3`,
+      [searchId,actor,requestId,groupId,target,action]);
+      if (previous.rowCount) {
+        if (!previous.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different roster change');
+        return {changed:true};
+      }
+      await this.group(c,searchId,groupId); await this.change(c,searchId,groupId,target,action);
       // Any proposal for this member is stale after a direct decision.
       await c.query('DELETE FROM field_group_member_proposals WHERE group_id=$1 AND user_id=$2',[groupId,target]);
+      await c.query(`INSERT INTO field_group_member_change_receipts(group_id,search_id,actor_id,request_id,target_id,action)
+        VALUES($1,$2,$3,$4,$5,$6)`,[groupId,searchId,actor,requestId,target,action]);
       await this.event(c,searchId,actor,'FIELD_GROUP_MEMBER_CHANGED',{groupId,userId:target,action});
       return {changed:true};
     });
   }
-  async propose(actor: string, searchId: string, groupId: string, target: string, action: Action) {
+  async propose(actor: string, searchId: string, groupId: string, target: string, action: Action, requestId:string) {
     return this.tx(async c => {
-      await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.groupLead(c,searchId,groupId,actor); await this.member(c,searchId,target,action === 'ADD');
+      await this.lockSearch(c,searchId); await this.groupLead(c,searchId,groupId,actor);
+      const previous=await c.query(`SELECT proposal_id,(group_id=$4 AND target_id=$5 AND action=$6) AS matches
+        FROM field_group_member_proposal_receipts WHERE search_id=$1 AND actor_id=$2 AND request_id=$3`,
+      [searchId,actor,requestId,groupId,target,action]);
+      if (previous.rowCount) {
+        if (!previous.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different roster proposal');
+        return {proposalId:previous.rows[0].proposal_id as string};
+      }
+      await this.group(c,searchId,groupId); await this.member(c,searchId,target,action === 'ADD');
       const present = await c.query('SELECT 1 FROM field_group_members WHERE group_id=$1 AND user_id=$2',[groupId,target]);
       if ((action === 'ADD') === Boolean(present.rowCount)) throw httpErrors.conflict('Change does not match current membership');
       if (action === 'REMOVE' && actor === target) throw httpErrors.conflict('Group lead cannot be removed by this operation');
       const r = await c.query(`INSERT INTO field_group_member_proposals(group_id,search_id,user_id,proposed_by,action)
         VALUES($1,$2,$3,$4,$5) ON CONFLICT(group_id,user_id) DO NOTHING RETURNING id`,[groupId,searchId,target,actor,action]);
       if (!r.rowCount) throw httpErrors.conflict('A proposal is already pending');
+      await c.query(`INSERT INTO field_group_member_proposal_receipts(proposal_id,group_id,search_id,actor_id,request_id,target_id,action)
+        VALUES($1,$2,$3,$4,$5,$6,$7)`,[r.rows[0].id,groupId,searchId,actor,requestId,target,action]);
       await this.event(c,searchId,actor,'FIELD_GROUP_MEMBER_PROPOSED',{groupId,proposalId:r.rows[0].id,userId:target,action});
       return {proposalId:r.rows[0].id as string};
     });
@@ -201,6 +220,12 @@ export class FieldGroupsService {
   async decide(actor: string, searchId: string, groupId: string, proposalId: string, approve: boolean) {
     return this.tx(async c => {
       await this.lockSearch(c,searchId); await this.fieldLead(c,searchId,actor); await this.group(c,searchId,groupId);
+      const receipt=await c.query(`SELECT actor_id,approved FROM field_group_member_decision_receipts
+        WHERE proposal_id=$1 AND group_id=$2 AND search_id=$3`,[proposalId,groupId,searchId]);
+      if (receipt.rowCount) {
+        if (receipt.rows[0].actor_id!==actor || receipt.rows[0].approved!==approve) throw httpErrors.conflict('Proposal already decided differently');
+        return {approved:approve};
+      }
       const r = await c.query(`SELECT user_id,action,proposed_by FROM field_group_member_proposals WHERE id=$1 AND group_id=$2 AND search_id=$3`,[proposalId,groupId,searchId]);
       if (!r.rowCount) throw httpErrors.notFound('Proposal not found');
       if (approve) {
@@ -208,6 +233,8 @@ export class FieldGroupsService {
         await this.change(c,searchId,groupId,r.rows[0].user_id as string,r.rows[0].action as Action);
       }
       await c.query('DELETE FROM field_group_member_proposals WHERE id=$1',[proposalId]);
+      await c.query(`INSERT INTO field_group_member_decision_receipts(proposal_id,group_id,search_id,actor_id,approved)
+        VALUES($1,$2,$3,$4,$5)`,[proposalId,groupId,searchId,actor,approve]);
       await this.event(c,searchId,actor,approve?'FIELD_GROUP_MEMBER_APPROVED':'FIELD_GROUP_MEMBER_REJECTED',{groupId,proposalId,userId:r.rows[0].user_id,action:r.rows[0].action});
       return {approved:approve};
     });
