@@ -150,13 +150,13 @@ test('password login to intake, search creation and coordinator claim', async ()
     response=await call(lead,'POST',`${taskBase}/groups/${group.groupId}/tasks`,{requestId:randomUUID(),description:'Synthetic task',priority:'HIGH',dueAt:'2020-01-01T00:00:00Z'});
     assert.equal(response.statusCode,200);
     const taskId=response.json().taskId, taskPath=`${taskBase}/tasks/${taskId}`;
-    assert.equal((await call(outsider,'POST',`${taskPath}/accept`,{})).statusCode,200);
+    assert.equal((await call(outsider,'POST',`${taskPath}/accept`,{requestId:randomUUID()})).statusCode,200);
     const { TaskOverdueInbox }=await import('../dist/tasks/overdue.js');
     await new TaskOverdueInbox(pool).process();
     const notifications='/api/v1/field-tasks/notifications';
     assert.ok((await call(lead,'GET',notifications)).json().items.some(x=>x.task_id===taskId));
     assert.ok((await call(outsider,'GET',notifications)).json().items.some(x=>x.task_id===taskId));
-    response=await call(outsider,'POST',`${taskPath}/results`,{result:'Synthetic result'});
+    response=await call(outsider,'POST',`${taskPath}/results`,{requestId:randomUUID(),result:'Synthetic result'});
     assert.equal(response.statusCode,200);
     assert.equal((await call(lead,'POST',`${taskPath}/decision`,{resultId:response.json().resultId,approve:true})).statusCode,200);
     assert.equal((await call(outsider,'GET',`${taskBase}/groups/${group.groupId}/tasks`)).json().items[0].status,'ACCEPTED');

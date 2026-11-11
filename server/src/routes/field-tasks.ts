@@ -47,10 +47,13 @@ const tasksRoutes: FastifyPluginAsync = async app => {
   app.get(`${root}/tasks/:taskId/results`,{preHandler:auth},async req=>{
     const q=page.parse(req.query); return service.results(req.user.id,parseId(req),taskId(req.params),q.after,q.limit);
   });
-  app.post(`${root}/tasks/:taskId/accept`,{preHandler:auth},async req=>service.accept(req.user.id,parseId(req),taskId(req.params)));
+  app.post(`${root}/tasks/:taskId/accept`,{preHandler:auth},async req=>{
+    const body=z.object({requestId:z.string().uuid()}).strict().parse(req.body);
+    return service.accept(req.user.id,parseId(req),taskId(req.params),body.requestId);
+  });
   app.post(`${root}/tasks/:taskId/results`,{preHandler:auth},async req=>{
-    const body=z.object({result:z.string().trim().min(1).max(4000)}).strict().parse(req.body);
-    return service.submit(req.user.id,parseId(req),taskId(req.params),body.result);
+    const body=z.object({requestId:z.string().uuid(),result:z.string().trim().min(1).max(4000)}).strict().parse(req.body);
+    return service.submit(req.user.id,parseId(req),taskId(req.params),body.result,body.requestId);
   });
   app.post(`${root}/tasks/:taskId/decision`,{preHandler:auth},async req=>{
     const body=z.discriminatedUnion('approve',[

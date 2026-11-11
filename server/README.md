@@ -308,11 +308,22 @@ search is open, a currently authorized field lead repeating the same request ID
 and task data receives the original task ID without another task or audit event.
 The key is scoped to the search and creator; reuse with different task data
 returns 409. Equivalent timestamps with different offsets compare equal.
-Existing tasks created before migration 026 have no retry receipt. This is only
-creation deduplication, not an offline queue or conflict resolution. `POST /tasks/:taskId/accept`, `POST .../results`
-(`result`), and `POST .../decision` (`resultId`, `approve`; `reason` required
-only for rejection) perform transitions. `GET .../results` lists review
-history. List endpoints support UUID cursor `after` and `limit` up to 100.
+Existing tasks created before migration 026 have no creation receipt.
+
+`POST /tasks/:taskId/accept` requires a client-generated UUID `requestId`;
+`POST .../results` requires `requestId` and `result`. With migrations 027–028,
+repeating the same request by the same currently authorized group lead returns
+the original acceptance/result receipt without another transition or event.
+A changed result using the same key returns 409. `POST .../decision` accepts
+`resultId`, `approve`, and `reason` only for rejection. The same current field
+lead can repeat the exact decision on that result; a different decision or
+reason returns 409. Responses are historical receipts, **not current task
+status**; read the task list to obtain current status. Previously accepted
+tasks and results without request IDs cannot gain these receipts retroactively.
+All retries recheck current permissions and require an open search.
+`GET .../results` lists review history. List endpoints support UUID cursor
+`after` and `limit` up to 100. These limited receipts are not an offline queue
+or a way to preserve and resolve conflicting versions.
 
 Migration 025 adds a private overdue inbox. With both the tasks flag and
 `KUKLA_ENABLE_EXPERIMENTAL_TASK_REMINDERS=true`, a best-effort in-process
@@ -329,9 +340,9 @@ read guarantee or monitoring exists, and the worker does nothing when stopped.
 The period is a development polling interval, not an agreed service level.
 
 **Not a complete task system:** there is no notification delivery, task
-edit/cancellation, individual work distribution, offline retry or conflict
+edit/cancellation, individual work distribution, offline queue or conflict
 resolution, UI or urgent text/icon presentation. Closed searches
-are inaccessible through this experimental API; duplicate mutations can return
-409 instead of a retry receipt. Legacy task routes remain separate and do not
+are inaccessible through this experimental API; requests without an applicable
+receipt or with changed content can return 409. Legacy task routes remain separate and do not
 enforce this workflow. Do not use real personal data or operationally depend on
 this API.

@@ -87,36 +87,54 @@ export class FieldTasksService {
       return {items,nextCursor:r.rows.length>limit ? items[items.length-1].id as string : null};
     });
   }
-  async accept(actor:string, search:string, id:string) {
+  async accept(actor:string, search:string, id:string, requestId:string) {
     return this.tx(async c => {
       await this.lockSearch(c,search); const t=await this.task(c,search,id); await this.groupLead(c,search,t.group_id,actor);
+      const receipt=await c.query('SELECT 1 FROM field_tasks WHERE id=$1 AND accepted_by=$2 AND accept_request_id=$3',[id,actor,requestId]);
+      if (receipt.rowCount) return {accepted:true};
       if (t.status !== 'ASSIGNED') throw httpErrors.conflict('Task is not awaiting acceptance');
-      await c.query("UPDATE field_tasks SET status='IN_PROGRESS' WHERE id=$1",[id]);
+      await c.query("UPDATE field_tasks SET status='IN_PROGRESS',accepted_by=$2,accept_request_id=$3 WHERE id=$1",[id,actor,requestId]);
       await this.event(c,search,actor,'FIELD_TASK_STARTED',{taskId:id});
-      return {status:'IN_PROGRESS'};
+      return {accepted:true};
     });
   }
-  async submit(actor:string, search:string, id:string, result:string) {
+  async submit(actor:string, search:string, id:string, result:string, requestId:string) {
     return this.tx(async c => {
       await this.lockSearch(c,search); const t=await this.task(c,search,id); await this.groupLead(c,search,t.group_id,actor);
+      // Receipt describes the original submission, not the task's current status.
+      // It remains retryable after review without re-submitting or changing state.
+      const previous=await c.query(`SELECT id,(result=$4) AS matches FROM field_task_results
+        WHERE task_id=$1 AND submitted_by=$2 AND submit_request_id=$3`,[id,actor,requestId,result]);
+      if (previous.rowCount) {
+        if (!previous.rows[0].matches) throw httpErrors.conflict('Request ID already used for a different result');
+        return {resultId:previous.rows[0].id as string};
+      }
       if (t.status !== 'IN_PROGRESS') throw httpErrors.conflict('Task is not in progress');
-      const r=await c.query('INSERT INTO field_task_results(task_id,submitted_by,result) VALUES($1,$2,$3) RETURNING id',[id,actor,result]);
+      const r=await c.query('INSERT INTO field_task_results(task_id,submitted_by,result,submit_request_id) VALUES($1,$2,$3,$4) RETURNING id',[id,actor,result,requestId]);
       await c.query("UPDATE field_tasks SET status='REVIEW' WHERE id=$1",[id]);
       await this.event(c,search,actor,'FIELD_TASK_RESULT_SUBMITTED',{taskId:id,resultId:r.rows[0].id});
-      return {status:'REVIEW',resultId:r.rows[0].id as string};
+      return {resultId:r.rows[0].id as string};
     });
   }
   async decide(actor:string, search:string, id:string, resultId:string, approve:boolean, reason:string|undefined) {
     return this.tx(async c => {
       await this.lockSearch(c,search); await this.fieldLead(c,search,actor); const t=await this.task(c,search,id);
+      const decision=approve?'ACCEPTED':'RETURNED';
+      const receipt=await c.query(`SELECT decision,(decision=$3 AND decision_by=$4 AND return_reason IS NOT DISTINCT FROM $5::text) AS matches
+        FROM field_task_results WHERE task_id=$1 AND id=$2`,[id,resultId,decision,actor,approve?null:reason]);
+      if (receipt.rowCount && receipt.rows[0].decision !== null) {
+        if (!receipt.rows[0].matches) throw httpErrors.conflict('Result already decided differently');
+        // This is a historical receipt; the task may have moved on since.
+        return {resultId,decision};
+      }
       if (t.status !== 'REVIEW') throw httpErrors.conflict('Task is not under review');
       const r=await c.query(`UPDATE field_task_results SET decision=$3,decision_by=$4,decision_at=now(),return_reason=$5
-        WHERE task_id=$1 AND id=$2 AND decision IS NULL RETURNING id`,[id,resultId,approve?'ACCEPTED':'RETURNED',actor,approve?null:reason]);
+        WHERE task_id=$1 AND id=$2 AND decision IS NULL RETURNING id`,[id,resultId,decision,actor,approve?null:reason]);
       if (!r.rowCount) throw httpErrors.notFound('Pending result not found');
       const status=approve?'ACCEPTED':'IN_PROGRESS';
       await c.query('UPDATE field_tasks SET status=$2 WHERE id=$1',[id,status]);
       await this.event(c,search,actor,approve?'FIELD_TASK_RESULT_ACCEPTED':'FIELD_TASK_RESULT_RETURNED',{taskId:id,resultId});
-      return {status};
+      return {resultId,decision};
     });
   }
 }
