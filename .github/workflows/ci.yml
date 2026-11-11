@@ -48,8 +48,18 @@ jobs:
           KUKLA_LAN_IP: 192.168.77.10
           POSTGRES_PASSWORD: test-only-value
           JWT_SECRET: test-only-value
+      - name: Validate isolated training Compose config
+        run: docker compose -p kukla-training-ci -f ../infrastructure/lan-test/compose.yml -f ../infrastructure/lan-test/compose.training.yml config --quiet
+        env:
+          KUKLA_LAN_IP: 192.168.77.10
+          POSTGRES_PASSWORD: test-only-value
+          JWT_SECRET: test-only-value
       - name: Smoke-test disposable LAN stack
         run: bash ../infrastructure/lan-test/ci-smoke.sh
+        env:
+          KUKLA_DISPOSABLE_CI: '1'
+      - name: Smoke-test disposable training stack
+        run: bash ../infrastructure/lan-test/ci-training-smoke.sh
         env:
           KUKLA_DISPOSABLE_CI: '1'
       - run: npm run lint
