@@ -193,6 +193,14 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       await client.query('BEGIN');
+      // Experimental group operations use this same search lock. Do not let a
+      // legacy membership removal silently bypass an approved group roster.
+      await client.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [id]);
+      const groupReferences = await client.query(`SELECT 1 FROM field_group_members WHERE search_id=$1 AND user_id=$2
+        UNION ALL SELECT 1 FROM field_group_leads WHERE search_id=$1 AND user_id=$2
+        UNION ALL SELECT 1 FROM field_group_lead_proposals WHERE search_id=$1 AND candidate_id=$2
+        UNION ALL SELECT 1 FROM field_group_member_proposals WHERE search_id=$1 AND user_id=$2 LIMIT 1`, [id,userId]);
+      if (groupReferences.rowCount) throw httpErrors.conflict('Resolve group membership and proposals before removing the search member');
       const removed = await client.query(
         'DELETE FROM search_members WHERE search_id=$1 AND user_id=$2 RETURNING user_id',
         [id, userId],

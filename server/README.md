@@ -248,3 +248,41 @@ process: current flows do not offer a safe removal for every situation,
 particularly unavailable coordinators. The authenticated `GET /api/v1/eligibility/audit` endpoint lets an active
 leader page through grant/revoke audit entries; it has no client UI yet. This is not a role-administration UI or a complete access matrix,
 and existing endpoints still use legacy permissions. Do not use real data.
+
+## Experimental field groups (development only)
+
+Migration 023 and `KUKLA_ENABLE_EXPERIMENTAL_GROUPS=true` enable a partial
+server workflow outside production. The current active, eligible field lead can
+create a group and propose its lead from active search members. The candidate
+must accept before becoming group lead; rejection leaves the group without one,
+and the field lead can propose another candidate. Acceptance also adds the
+lead to the approved group roster. A coordinator does not create groups or
+approve rosters through this API.
+
+The confirmed, active group lead can propose adding or removing an active
+search member. The field lead can approve or reject the proposal, or directly
+change the roster. Proposals alone never alter membership; approval rechecks
+that the proposer is still the active lead. The group lead cannot be removed
+through the roster operation. All changes and audit events are transactional.
+Legacy search-member removal returns 409 while the member is referenced by a
+group or group proposal; database constraints also prevent dangling references.
+Deleting an entire search still cascades its groups.
+
+Routes are under `/api/v1/field-groups/searches/:id`. The field lead creates a
+group with `POST /groups` (`title`, `candidateId`). A candidate reads
+`GET /my-lead-proposals` and decides with `POST /groups/:groupId/lead-response`
+(`proposalId`, `accept`). The field lead can propose another candidate with
+`POST /groups/:groupId/lead-proposals`. Field lead and confirmed group leads
+can list their authorized groups (`GET /groups`, `limit`, `after`) and inspect
+`GET /groups/:groupId`; roster changes use `POST .../members/change`,
+`POST .../member-proposals` and `POST .../member-decision`. See the route
+schemas for exact bodies. Responses are `no-store`.
+
+This is **not a complete group process**: confirmed-lead replacement/removal,
+notifications, a field-lead group-event audit UI, tasks, offline retry receipts
+and client screens are missing. A lead proposal retry after acceptance returns
+404; duplicate requests are not yet offline-idempotent. Search membership is
+still the legacy model, not the final participant admission process. Groups
+are inaccessible through this experimental API while the search is closed;
+other legacy routes and complete access policy remain unreviewed. Do not use
+real data or treat this as an operational system.
