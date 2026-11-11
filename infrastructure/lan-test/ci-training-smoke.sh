@@ -50,7 +50,7 @@ const login=async name=>{const a=accounts.find(x=>x.name===name); return (await 
 const operator=await login('operator'), registrar=await login('registrar');
 const headers=token=>({authorization:`Bearer ${token}`,'content-type':'application/json'});
 const report=await (await req('/api/v1/intake/reports',{method:'POST',headers:{...headers(operator),'idempotency-key':crypto.randomUUID()},body:JSON.stringify({applicantName:'Synthetic',applicantContact:null,missingPersonName:null,lastSeenTime:null,lastSeenPlace:null,situation:null})})).json();
-await req(`/api/v1/intake/reports/${report.id}/handoff`,{method:'POST',headers:headers(operator)});
+await req(`/api/v1/intake/reports/${report.id}/handoff`,{method:'POST',headers:{authorization:`Bearer ${operator}`}});
 const queue=await (await req('/api/v1/intake/queue',{headers:headers(registrar)})).json();
 if(!queue.items.some(x=>x.id===report.id)) throw Error('Report absent from registrar queue');
 await req(`/api/v1/intake/reports/${report.id}/create-search`,{method:'POST',headers:headers(registrar),body:JSON.stringify({title:'Synthetic search'})});
