@@ -167,6 +167,11 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal((await call(lead,'POST',`${taskPath}/decision`,{resultId:response.json().resultId,approve:true})).statusCode,200);
     assert.equal((await call(outsider,'GET',`${taskBase}/groups/${group.groupId}/tasks`)).json().items[0].status,'ACCEPTED');
     assert.ok(!(await call(lead,'GET',notifications)).json().items.some(x=>x.task_id===taskId));
+    await pool.query('INSERT INTO field_lead_eligibility(user_id) VALUES($1)',[outsider]);
+    const leadBase=`/api/v1/field-lead/searches/${searchId}`;
+    response=await call(registrar,'POST',`${leadBase}/proposals`,{candidateId:outsider});
+    assert.equal(response.statusCode,200);
+    const pendingLeadProposal=response.json().proposalId;
     assert.equal((await call(lead, 'POST', `${closure}/confirm`, {})).statusCode, 200);
     const { SearchClosureService } = await import('../dist/search-closure/service.js');
     await assert.rejects(new SearchClosureService(failingPool).close(coordinator,searchId), /injected audit failure/);
@@ -174,7 +179,10 @@ test('password login to intake, search creation and coordinator claim', async ()
     assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 200);
     assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1', [searchId])).rows[0].status, 'COMPLETED');
     assert.equal((await pool.query('SELECT count(*)::int n FROM search_contact_grants WHERE search_id=$1',[searchId])).rows[0].n,0);
+    assert.equal((await call(outsider,'POST',`${leadBase}/proposals/accept`,{proposalId:pendingLeadProposal})).statusCode,409);
+    assert.equal((await pool.query('SELECT user_id FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].user_id,lead);
     assert.equal((await call(coordinator, 'POST', `${closure}/reopen`, {reason: 'New information'})).statusCode, 200);
+    assert.equal((await call(registrar,'POST',`${leadBase}/proposals/cancel`,{proposalId:pendingLeadProposal,reason:'No longer needed'})).statusCode,200);
     assert.equal((await call(lead, 'GET', `${access}/contact`)).statusCode,404);
     assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1', [searchId])).rows[0].status, 'PLANNED');
     assert.equal((await call(coordinator, 'POST', `${closure}/close`, {})).statusCode, 409);

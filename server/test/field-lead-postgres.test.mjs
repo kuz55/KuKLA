@@ -38,6 +38,19 @@ test('field lead assignment and replacement require acceptance and record except
     assert.equal((await pool.query('SELECT count(*)::int n FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].n, 0);
     assert.equal(await service.processOverdueReminders(),0);
     await pool.query("UPDATE field_lead_proposals SET created_at=now()-interval '11 minutes' WHERE id=$1",[proposal.proposalId]);
+    const eventsBefore = (await pool.query('SELECT count(*)::int n FROM events WHERE search_id=$1',[searchId])).rows[0].n;
+    for (const status of ['COMPLETED','CANCELLED']) {
+      await pool.query('UPDATE searches SET status=$2 WHERE id=$1',[searchId,status]);
+      await assert.rejects(service.propose(registrar,searchId,second), {statusCode:409});
+      await assert.rejects(service.accept(first,searchId,proposal.proposalId), {statusCode:409});
+      await assert.rejects(service.decline(first,searchId,proposal.proposalId), {statusCode:409});
+      await assert.rejects(service.cancel(registrar,searchId,proposal.proposalId,'No response'), {statusCode:409});
+      await assert.rejects(service.remove(coordinator,searchId,'Unavailable'), {statusCode:409});
+      assert.equal(await service.processOverdueReminders(),0);
+    }
+    assert.equal((await pool.query('SELECT count(*)::int n FROM events WHERE search_id=$1',[searchId])).rows[0].n,eventsBefore);
+    assert.equal((await pool.query('SELECT reminder_created_at FROM field_lead_proposals WHERE id=$1',[proposal.proposalId])).rows[0].reminder_created_at,null);
+    await pool.query("UPDATE searches SET status='PLANNED' WHERE id=$1",[searchId]);
     const failNotifications = { connect: async () => {
       const client = await pool.connect();
       return { release: () => client.release(), query: (sql, values) => {
@@ -89,6 +102,18 @@ test('field lead assignment and replacement require acceptance and record except
     assert.equal((await pool.query('SELECT count(*)::int n FROM search_field_leads WHERE search_id=$1',[searchId])).rows[0].n, 0);
     const event = await pool.query("SELECT payload FROM events WHERE search_id=$1 AND type='FIELD_LEAD_EXCEPTIONALLY_REMOVED'",[searchId]);
     assert.equal(event.rows[0].payload.reason, 'Unavailable');
+    const pending = await service.propose(registrar,searchId,first);
+    const { SearchClosureService } = await import('../dist/search-closure/service.js');
+    const [closure, response] = await Promise.allSettled([
+      new SearchClosureService(pool).close(coordinator,searchId,'Synthetic exception'),
+      service.accept(first,searchId,pending.proposalId),
+    ]);
+    assert.equal(closure.status,'fulfilled');
+    if (response.status === 'rejected') assert.equal(response.reason.statusCode,409);
+    assert.equal((await pool.query('SELECT status FROM searches WHERE id=$1',[searchId])).rows[0].status,'COMPLETED');
+    await assert.rejects(service.accept(first,searchId,pending.proposalId), {statusCode:409});
+    const order = await pool.query("SELECT type FROM events WHERE search_id=$1 AND (type='SEARCH_CLOSED' OR (type='FIELD_LEAD_ACCEPTED' AND payload->>'proposalId'=$2)) ORDER BY id",[searchId,pending.proposalId]);
+    assert.equal(order.rows.at(-1).type,'SEARCH_CLOSED', 'acceptance cannot commit after closure');
   } finally {
     if (searchId) await pool.query('DELETE FROM searches WHERE id=$1',[searchId]);
     await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[users]);

@@ -11,8 +11,13 @@ export class FieldLeadService {
     finally { c.release(); }
   }
   private async lockSearch(c: PoolClient, id: string) {
-    const r = await c.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [id]);
+    const r = await c.query<{status:string}>('SELECT status FROM searches WHERE id=$1 FOR UPDATE', [id]);
     if (!r.rowCount) throw httpErrors.notFound('Search not found');
+    return r.rows[0].status;
+  }
+  private async lockOpenSearch(c: PoolClient, id: string) {
+    const status = await this.lockSearch(c, id);
+    if (!['PLANNED','ACTIVE','PAUSED'].includes(status)) throw httpErrors.conflict('Search is not open');
   }
   private async active(c: PoolClient, id: string) {
     const r = await c.query('SELECT id FROM users WHERE id=$1 AND active=true FOR SHARE', [id]);
@@ -56,7 +61,7 @@ export class FieldLeadService {
       await this.active(c, actor);
       const isRegistrar = await this.registrar(c, actor);
       await this.eligible(c, candidate);
-      await this.lockSearch(c, searchId);
+      await this.lockOpenSearch(c, searchId);
       const current = await c.query('SELECT user_id FROM search_field_leads WHERE search_id=$1', [searchId]);
       if (!isRegistrar && !(current.rowCount && await this.coordinator(c, searchId, actor))) throw httpErrors.forbidden('Registrar or assigned coordinator required');
       if (current.rows[0]?.user_id === candidate) throw httpErrors.conflict('Candidate is already the field lead');
@@ -80,7 +85,7 @@ export class FieldLeadService {
   async accept(actor: string, searchId: string, proposalId: string) {
     return this.tx(async c => {
       await this.eligible(c, actor);
-      await this.lockSearch(c, searchId);
+      await this.lockOpenSearch(c, searchId);
       const r = await c.query('SELECT id,proposed_by FROM field_lead_proposals WHERE search_id=$1 AND id=$2 AND candidate_id=$3', [searchId,proposalId,actor]);
       if (!r.rowCount) {
         // A receipt only confirms a past acceptance; it never restores a lead.
@@ -101,7 +106,7 @@ export class FieldLeadService {
   async decline(actor: string, searchId: string, proposalId: string) {
     return this.tx(async c => {
       await this.active(c, actor);
-      await this.lockSearch(c, searchId);
+      await this.lockOpenSearch(c, searchId);
       const r = await c.query('DELETE FROM field_lead_proposals WHERE search_id=$1 AND id=$2 AND candidate_id=$3 RETURNING id,proposed_by', [searchId,proposalId,actor]);
       if (!r.rowCount) throw httpErrors.notFound('Proposal not found');
       await this.event(c, searchId, actor, 'FIELD_LEAD_DECLINED', { proposalId });
@@ -113,7 +118,7 @@ export class FieldLeadService {
     return this.tx(async c => {
       await this.active(c, actor);
       const isRegistrar = await this.registrar(c, actor);
-      await this.lockSearch(c, searchId);
+      await this.lockOpenSearch(c, searchId);
       if (!isRegistrar && !await this.coordinator(c, searchId, actor)) throw httpErrors.forbidden('Registrar or assigned coordinator required');
       const r = await c.query('DELETE FROM field_lead_proposals WHERE id=$1 AND search_id=$2 RETURNING candidate_id', [proposalId,searchId]);
       if (!r.rowCount) throw httpErrors.notFound('Proposal not found');
@@ -156,12 +161,14 @@ export class FieldLeadService {
   // A failed insert rolls back the marker so a later poll can retry.
   async processOverdueReminders(limit = 50) {
     const due = await this.pool.query<{ search_id: string; id: string }>(
-      `SELECT search_id,id FROM field_lead_proposals WHERE reminder_created_at IS NULL
-       AND created_at <= now() - interval '10 minutes' ORDER BY created_at,id LIMIT $1`, [limit]);
+      `SELECT p.search_id,p.id FROM field_lead_proposals p JOIN searches s ON s.id=p.search_id
+       WHERE p.reminder_created_at IS NULL AND s.status IN ('PLANNED','ACTIVE','PAUSED')
+       AND p.created_at <= now() - interval '10 minutes' ORDER BY p.created_at,p.id LIMIT $1`, [limit]);
     let created = 0;
     for (const item of due.rows) {
       const result = await this.tx(async c => {
-        await this.lockSearch(c, item.search_id);
+        const status = await this.lockSearch(c, item.search_id);
+        if (!['PLANNED','ACTIVE','PAUSED'].includes(status)) return false;
         const pending = await c.query(`SELECT id,proposed_by FROM field_lead_proposals
           WHERE search_id=$1 AND id=$2 AND reminder_created_at IS NULL AND created_at <= now() - interval '10 minutes'`, [item.search_id,item.id]);
         if (!pending.rowCount) return false;
@@ -181,7 +188,7 @@ export class FieldLeadService {
   async remove(actor: string, searchId: string, reason: string) {
     return this.tx(async c => {
       await this.active(c, actor);
-      await this.lockSearch(c, searchId);
+      await this.lockOpenSearch(c, searchId);
       if (!await this.coordinator(c, searchId, actor)) throw httpErrors.forbidden('Assigned coordinator required');
       const r = await c.query('DELETE FROM search_field_leads WHERE search_id=$1 RETURNING user_id', [searchId]);
       if (!r.rowCount) throw httpErrors.notFound('Field lead not found');

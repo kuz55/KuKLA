@@ -139,6 +139,8 @@ Migrations 017–019 add acceptance receipts, a private event inbox and a best-e
 
 `GET /api/v1/field-lead/notifications` and `POST /api/v1/field-lead/notifications/:id/acknowledge` provide private cursor-paginated unread events and idempotent acknowledgement. Candidate eligibility or manager rights are rechecked on reads. The inbox contains IDs and types, never report details or reasons. Proposal, acceptance, decline and cancellation notifications are written transactionally with their respective changes. Acceptance and decline notify the proposer, assigned coordinators and active registrars who resolved linked reports. If a search has no linked report and was proposed by a coordinator, there is no reliable designated registrar to notify.
 
+Field-lead proposal, acceptance, decline, cancellation and exceptional removal are blocked with 409 while a search is closed or cancelled; the check is serialized with closure. Pending proposals are retained, not automatically cancelled, and can be acted on again after reopening. Existing notification and pending-proposal reads remain available to their authorized recipients. The reminder worker skips closed searches and resumes processing retained overdue proposals after reopening.
+
 When the experimental field-lead API is enabled outside production, a worker polls every 30 seconds for proposals unanswered for at least ten minutes and records `NO_RESPONSE` events in the inbox. The reminder is recorded once per proposal with its marker in one transaction; a failure rolls back and can be retried. Execution depends on a running server and database, and may be delayed after outages or backlog. An inbox entry is not push delivery, proof of reading or a guarantee that an active registrar received it. Entries can become stale; clients must query current state. There is no delivery UI, agreed registrar assignment model, full notification escalation, production deployment or security audit. Never use with real personal data.
 
 **Search status safety:** the legacy `PATCH /api/v1/searches/:id` rejects any
@@ -172,8 +174,8 @@ roles or enable their other APIs. All responses are `no-store`:
 This is not the complete agreed process. SMS, an outbox/retry/delivery and complete contact authorization are **not implemented**; there is no
 client interface, offline idempotency for close/reopen, complete status model,
 or secure unified authorization on legacy routes and audit events. A repeated
-close or reopen returns 409 rather than a delivery receipt. Other experimental
-workflows are not yet frozen when a search is closed. Do not enable for real
+close or reopen returns 409 rather than a delivery receipt. Some other
+workflows, including coordination and legacy APIs, are not yet frozen when a search is closed. Do not enable for real
 personal data or use it as evidence of production readiness.
 
 The closure API also provides `GET /api/v1/search-closure/searches/:id/audit`
