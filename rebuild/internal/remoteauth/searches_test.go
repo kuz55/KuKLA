@@ -14,6 +14,7 @@ const searchID = "12345678-1234-1234-1234-123456789abc"
 
 func TestRemoteSearchesSessionAndPrivacy(t *testing.T) {
     var unauthorized atomic.Bool
+    var unavailable atomic.Bool
     var calls atomic.Int32
     srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         if r.URL.Path == "/api/v1/auth/login" {
@@ -23,6 +24,7 @@ func TestRemoteSearchesSessionAndPrivacy(t *testing.T) {
         calls.Add(1)
         if r.Header.Get("Authorization") != "Bearer secret-token" { t.Error("missing authorization"); w.WriteHeader(401); return }
         if unauthorized.Load() { w.WriteHeader(401); return }
+        if unavailable.Load() { w.WriteHeader(503); return }
         switch r.URL.Path {
         case "/api/v1/searches": fmt.Fprintf(w, `[{"id":%q,"title":"Test","status":"PLANNED","description":"private"}]`,searchID)
         case "/api/v1/searches/"+searchID: fmt.Fprintf(w, `{"id":%q,"title":"Test","status":"PLANNED","description":"private"}`,searchID)
@@ -37,6 +39,10 @@ func TestRemoteSearchesSessionAndPrivacy(t *testing.T) {
     item, err := s.Search(ctx,searchID); if err != nil || item.Title != "Test" { t.Fatalf("detail: %#v %v",item,err) }
     before := calls.Load()
     if _, err := s.Search(ctx, "../auth/logout"); err != ErrNotFound || calls.Load() != before { t.Fatal("invalid id reached server") }
+    unavailable.Store(true)
+    if _, err := s.Searches(ctx); err != ErrUnavailable { t.Fatalf("temporary outage: %v",err) }
+    unavailable.Store(false)
+    if _, err := s.Searches(ctx); err != nil { t.Fatalf("session must remain usable after outage: %v",err) }
     unauthorized.Store(true)
     if _, err := s.Searches(ctx); err != ErrSignedOut { t.Fatalf("revoked: %v",err) }
     before = calls.Load()

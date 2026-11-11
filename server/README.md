@@ -217,3 +217,9 @@ workflow. The experiment does not fix the legacy role matrix, other endpoints,
 offline copies or application UI, and cannot ensure data already viewed is
 erased. SMS and end-to-end production safeguards remain incomplete. Do not use
 real applicant data.
+
+Authentication checks a valid JWT against the session database on every request.
+If that database is unavailable, protected endpoints fail closed with HTTP 503
+rather than reporting a revoked session as 401. No raw database error is returned.
+An actually invalid or revoked session still receives 401. This distinction
+helps clients report outages without treating them as a credential failure.
