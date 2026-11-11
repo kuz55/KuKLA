@@ -10,10 +10,15 @@ for (let i=0;i<lines.length;i++) {
   for (let j=i+1;j<Math.min(i+35,lines.length) && !/^\s*\.\.\.$/.test(lines[j]);j++) {
     const match=lines[j].match(/^\s*(?:#\s*)?(location|failureType|expected|actual):\s*(.{1,120})$/);
     if (match) details.push(`${match[1]}=${match[2]}`);
-    const stack=lines[j].match(/(?:file:\/\/)?([^\s()]+\/test\/[\w.-]+\.test\.mjs:\d+:\d+)/);
+    const stack=lines[j].match(/\bat\s+.*?(?:file:\/\/)?([^\s()]+\/test\/[\w.-]+\.test\.mjs:\d+:\d+)/);
     if (stack && !details.some(detail=>detail.startsWith('testStack='))) details.push(`testStack=${stack[1]}`);
     const error=lines[j].match(/^\s*(?:#\s*)?error:\s*'([^']{1,120})'$/);
     if (error) details.push(`error=${error[1]}`);
+    if (/^\s*(?:#\s*)?error:\s*\|[-+]?\s*$/.test(lines[j])) {
+      const first=lines.slice(j+1,j+5).map(line=>line.replace(/^\s*#?\s*/,''))
+        .find(line=>line.length>0);
+      if (first) details.push(`error=${first.slice(0,120)}`);
+    }
   }
   console.log(`::error title=Server test failure::${escaped([lines[i],...details].join(' | '))}`);
 }
