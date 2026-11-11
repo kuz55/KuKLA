@@ -288,9 +288,13 @@ group leads can read `GET /groups/:groupId/audit` with `before` (event ID) and
 schemas for exact bodies. Responses are `no-store`.
 
 This is **not a complete group process**: confirmed-lead replacement/removal,
-notifications, a group-event audit UI, offline retry receipts
-and client screens are missing. The separate task experiment below is incomplete. A lead proposal retry after acceptance returns
-404; duplicate requests are not yet offline-idempotent. Search membership is
+notifications, a group-event audit UI, offline retry for roster changes
+and client screens are missing. The separate task experiment below is incomplete.
+Migration 030 retains the candidate's lead-proposal response: the same candidate
+may repeat the same acceptance or rejection while still an active search member
+and the search is open. Repeating the opposite decision returns 409. This is a
+historical receipt and does not reinstate an old lead or proposal; proposals
+resolved before migration 030 have no receipt. Search membership is
 still the legacy model, not the final participant admission process. Groups
 are inaccessible through this experimental API while the search is closed;
 other legacy routes and complete access policy remain unreviewed. Do not use

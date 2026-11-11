@@ -51,8 +51,16 @@ test('field groups require accepted group lead and field lead approval of member
     assert.equal((await call(groupLead,'GET','/groups')).json().items.length,0);
     assert.equal((await call(searcher,'POST',`${g}/lead-response`,{proposalId,accept:true})).statusCode,404);
     assert.equal((await call(groupLead,'POST',`${g}/member-proposals`,{userId:searcher,action:'ADD'})).statusCode,403);
+    const failingPool={connect:async()=>{const c=await pool.connect();return {release:()=>c.release(),query:(sql,params)=>{
+      if (sql.startsWith('INSERT INTO events')) throw new Error('audit failure'); return c.query(sql,params);
+    }}}};
+    await assert.rejects(new FieldGroupsService(failingPool).respond(groupLead,search,groupId,proposalId,true),/audit failure/);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM field_group_lead_response_receipts WHERE proposal_id=$1',[proposalId])).rows[0].n,0);
+    assert.equal((await call(groupLead,'GET','/my-lead-proposals')).json()[0].id,proposalId,'failed decision leaves proposal pending');
     const acceptance=await Promise.all([call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:true}),call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:true})]);
-    assert.deepEqual(acceptance.map(x=>x.statusCode).sort(),[200,404]);
+    assert.deepEqual(acceptance.map(x=>x.statusCode),[200,200]);
+    assert.equal((await call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:false})).statusCode,409);
+    assert.equal((await call(searcher,'POST',`${g}/lead-response`,{proposalId,accept:true})).statusCode,404);
     assert.deepEqual((await call(fieldLead,'POST','/groups',data)).json(),{groupId,proposalId},'creation receipt survives lead acceptance');
     await pool.query("UPDATE field_groups SET title='Changed title' WHERE id=$1",[groupId]);
     assert.deepEqual((await call(fieldLead,'POST','/groups',data)).json(),{groupId,proposalId},'receipt uses immutable initial data');
@@ -87,9 +95,6 @@ test('field groups require accepted group lead and field lead approval of member
     let memberProposal=response.json().proposalId;
     assert.equal((await call(fieldLead,'GET',g)).json().members.length,1,'proposal must not alter group');
     assert.equal((await call(searcher,'POST',`${g}/member-decision`,{proposalId:memberProposal,approve:true})).statusCode,403);
-    const failingPool={connect:async()=>{const c=await pool.connect();return {release:()=>c.release(),query:(sql,params)=>{
-      if (sql.startsWith('INSERT INTO events')) throw new Error('audit failure'); return c.query(sql,params);
-    }}}};
     await assert.rejects(new FieldGroupsService(failingPool).decide(fieldLead,search,groupId,memberProposal,true),/audit failure/);
     assert.equal((await call(fieldLead,'GET',g)).json().members.length,1);
     assert.equal((await call(fieldLead,'POST',`${g}/member-decision`,{proposalId:memberProposal,approve:true})).statusCode,200);
@@ -120,7 +125,10 @@ test('field groups require accepted group lead and field lead approval of member
     response=await call(fieldLead,'POST',`${bpath}/lead-proposals`,{candidateId:searcher});
     assert.equal(response.statusCode,200);
     assert.equal((await call(searcher,'POST',`${bpath}/lead-response`,{proposalId:response.json().proposalId,accept:true})).statusCode,200);
+    assert.equal((await call(groupLead,'POST',`${bpath}/lead-response`,{proposalId:b.proposalId,accept:false})).statusCode,200,'old declined response returns a receipt');
+    assert.equal((await call(fieldLead,'GET',bpath)).json().lead.user_id,searcher,'old retry does not replace the current lead');
     await pool.query("UPDATE searches SET status='COMPLETED' WHERE id=$1",[search]);
+    assert.equal((await call(groupLead,'POST',`${g}/lead-response`,{proposalId,accept:true})).statusCode,409,'closed searches reject retry receipts');
     assert.equal((await call(fieldLead,'POST','/groups',data)).statusCode,409,'receipts require the search to be open');
     const legacy=await app.inject({url:`/api/v1/searches/${search}/events`,headers:{authorization:`Bearer ${tokens[groupLead]}`}});
     assert.equal(legacy.statusCode,200);

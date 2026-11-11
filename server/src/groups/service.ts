@@ -132,9 +132,17 @@ export class FieldGroupsService {
   async respond(actor: string, searchId: string, groupId: string, proposalId: string, accept: boolean) {
     return this.tx(async c => {
       await this.lockSearch(c,searchId); await this.group(c,searchId,groupId); await this.member(c,searchId,actor);
+      const receipt=await c.query(`SELECT accepted FROM field_group_lead_response_receipts
+        WHERE proposal_id=$1 AND search_id=$2 AND group_id=$3 AND candidate_id=$4`,[proposalId,searchId,groupId,actor]);
+      if (receipt.rowCount) {
+        if (receipt.rows[0].accepted !== accept) throw httpErrors.conflict('Proposal already decided differently');
+        return {accepted:accept};
+      }
       const proposal = await c.query(`DELETE FROM field_group_lead_proposals
         WHERE search_id=$1 AND group_id=$2 AND id=$3 AND candidate_id=$4 RETURNING proposed_by`,[searchId,groupId,proposalId,actor]);
       if (!proposal.rowCount) throw httpErrors.notFound('Proposal not found');
+      await c.query(`INSERT INTO field_group_lead_response_receipts(proposal_id,group_id,search_id,candidate_id,accepted)
+        VALUES($1,$2,$3,$4,$5)`,[proposalId,groupId,searchId,actor,accept]);
       if (accept) {
         await c.query('INSERT INTO field_group_leads(group_id,search_id,user_id) VALUES($1,$2,$3)',[groupId,searchId,actor]);
         await c.query('INSERT INTO field_group_members(group_id,search_id,user_id) VALUES($1,$2,$3)',[groupId,searchId,actor]);
