@@ -17,6 +17,7 @@ test('experimental closure API: assignment-bound confirmation, permissions, audi
       CREATE TABLE sessions(token_hash text, user_id uuid, expires_at timestamptz);
       CREATE TABLE searches(id uuid PRIMARY KEY, status text NOT NULL DEFAULT 'PLANNED', ended_at timestamptz);
       CREATE TABLE events(search_id uuid, user_id uuid, type text, payload jsonb);
+      CREATE TABLE search_contact_grants(search_id uuid);
       CREATE TABLE coordinator_eligibility(user_id uuid PRIMARY KEY REFERENCES users(id));
       CREATE TABLE search_coordinators(search_id uuid REFERENCES searches(id), user_id uuid REFERENCES users(id), is_primary boolean, PRIMARY KEY(search_id,user_id));
       CREATE TABLE field_lead_eligibility(user_id uuid PRIMARY KEY REFERENCES users(id));

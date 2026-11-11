@@ -164,8 +164,7 @@ roles or enable their other APIs. All responses are `no-store`:
   assuming activation. A legacy `COMPLETED` search without a closure record cannot
   be reopened through this API. A new confirmation is required to close again.
 
-This is not the complete agreed process. SMS, an outbox/retry/delivery and
-contact-grant/revocation functionality are **not implemented**; there is no
+This is not the complete agreed process. SMS, an outbox/retry/delivery and complete contact authorization are **not implemented**; there is no
 client interface, offline idempotency for close/reopen, complete status model,
 or secure unified authorization on legacy routes and audit events. A repeated
 close or reopen returns 409 rather than a delivery receipt. Other experimental
@@ -187,3 +186,34 @@ The application error handler logs a request identifier and status for server
 errors without serializing raw exceptions, which can contain database values.
 This deliberately reduces diagnostic detail; other components and logging paths
 still require review, and this is not a comprehensive data-protection guarantee.
+
+
+## Experimental applicant-contact grants (development only)
+
+Migration 021 and `KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS=true` enable
+a narrow, separate API outside production. An active assigned coordinator
+may grant a current active search member access to the contact from one
+linked report, with a mandatory reason. This per-report scope is deliberately
+more restrictive when multiple applicants are linked to one search; it does
+not automatically grant the contact from every report. No complete report
+or other applicant fields are returned to the grantee.
+
+Under `/api/v1/contact-access/searches/:id/reports/:reportId`, POST `/grants`
+with `{userId, reason}`, POST `/revoke` with `{userId}`, and GET `/contact`
+are authenticated and `no-store`. Duplicate grant or missing revoke returns
+an error, not an offline retry receipt. `GET /api/v1/contact-access/searches/:id/audit`
+shows explicit grant/revoke events to assigned eligible coordinators only, with
+`limit` and `before` paging as in the closure audit. Contact values are not
+copied into events. Membership removal cascades grants; the user deactivation
+API removes them in its transaction, so rejoining or reactivation does not
+restore them. Closure removes all grants in its transaction and reopen never
+restores them. Closure records the number removed; membership/user changes are
+recorded by the existing events, not as per-grant revoke entries.
+
+Important limitations: accepted field leads do not automatically become legacy
+search members; no safe participant administration is implemented yet.
+Deactivation outside the application API is not a supported administrative
+workflow. The experiment does not fix the legacy role matrix, other endpoints,
+offline copies or application UI, and cannot ensure data already viewed is
+erased. SMS and end-to-end production safeguards remain incomplete. Do not use
+real applicant data.

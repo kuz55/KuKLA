@@ -17,6 +17,7 @@ import intakeRoutes from './routes/intake.js';
 import coordinationRoutes from './routes/coordination.js';
 import fieldLeadRoutes from './routes/field-lead.js';
 import searchClosureRoutes from './routes/search-closure.js';
+import contactAccessRoutes from './routes/contact-access.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
 export async function buildApp() {
@@ -110,6 +111,10 @@ export async function buildApp() {
 
   if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE === 'true') {
     await app.register(searchClosureRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS === 'true') {
+    await app.register(contactAccessRoutes);
   }
 
   return app;

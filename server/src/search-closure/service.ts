@@ -79,7 +79,8 @@ export class SearchClosureService {
       await client.query('INSERT INTO search_closures(search_id,previous_status,closed_by) VALUES($1,$2,$3)', [searchId,status,actor]);
       await client.query("UPDATE searches SET status='COMPLETED',ended_at=now() WHERE id=$1", [searchId]);
       await client.query('DELETE FROM search_closure_confirmations WHERE search_id=$1', [searchId]);
-      await this.event(client, searchId, actor, 'SEARCH_CLOSED', { previousStatus: status, fieldLeadId: confirmation.rows[0]?.field_lead_id ?? null, exceptionReason: exceptionReason ?? null });
+      const revoked = await client.query('DELETE FROM search_contact_grants WHERE search_id=$1', [searchId]);
+      await this.event(client, searchId, actor, 'SEARCH_CLOSED', { previousStatus: status, fieldLeadId: confirmation.rows[0]?.field_lead_id ?? null, exceptionReason: exceptionReason ?? null, contactGrantsRevoked: revoked.rowCount });
       return { status: 'COMPLETED' };
     });
   }

@@ -199,9 +199,12 @@ const userRoutes: FastifyPluginAsync = async (app) => {
          WHERE id=$5 RETURNING id,name,email,phone,role,active,created_at`,
         [body.name ?? null, body.role ?? null, body.active ?? null, body.phone ?? null, id],
       );
+      const revokedGrants = body.active === false
+        ? await client.query('DELETE FROM search_contact_grants WHERE user_id=$1', [id])
+        : null;
       await client.query(
         'INSERT INTO events(search_id,user_id,type,payload) VALUES(NULL,$1,$2,$3)',
-        [actor.id, 'USER_UPDATED', { userId: id, changes: body }],
+        [actor.id, 'USER_UPDATED', { userId: id, changes: body, contactGrantsRevoked: revokedGrants?.rowCount ?? 0 }],
       );
       await client.query('COMMIT');
       return result.rows[0];
