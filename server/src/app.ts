@@ -16,13 +16,34 @@ import wsRoutes from './routes/ws.js';
 import intakeRoutes from './routes/intake.js';
 import coordinationRoutes from './routes/coordination.js';
 import fieldLeadRoutes from './routes/field-lead.js';
+import searchClosureRoutes from './routes/search-closure.js';
+import contactAccessRoutes from './routes/contact-access.js';
+import eligibilityRoutes from './routes/eligibility.js';
+import groupsRoutes from './routes/groups.js';
+import tasksRoutes from './routes/field-tasks.js';
 
 // Build a configured app without binding a port so tests can use Fastify.inject.
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+    // Fastify's default request and 404 logs include the full URL and query.
+    // Use route templates instead of user-controlled paths, query or headers.
+    disableRequestLogging: true,
     trustProxy: TRUST_PROXY.length ? TRUST_PROXY : false,
   });
+
+  // Legacy API responses can include personal data, session tokens or invitation
+  // secrets. Apply the same policy to errors and unmatched API paths as well as
+  // successful responses; do not depend on every route remembering the header.
+  app.addHook('onSend', async (req, reply, payload) => {
+    const path = req.url.split('?', 1)[0];
+    if (path === '/api/v1' || path.startsWith('/api/v1/')) reply.header('Cache-Control', 'no-store');
+    return payload;
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    req.log.info({ method: req.method, route: req.routeOptions.url ?? 'unmatched', statusCode: reply.statusCode, elapsedMs: reply.elapsedTime }, 'request completed');
+  });
+  app.setNotFoundHandler(async (_req, reply) => reply.code(404).send({ error: 'NOT_FOUND', message: 'Route not found' }));
 
   await app.register(cors, { origin: CORS_ORIGIN });
   await app.register(sensible);
@@ -49,7 +70,7 @@ export async function buildApp() {
     }
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: 'VALIDATION_ERROR',
@@ -70,8 +91,10 @@ export async function buildApp() {
       });
     }
 
-    app.log.error(err);
     const status = error.statusCode ?? 500;
+    // Database and plugin errors can embed submitted values, SQL parameters,
+    // URLs or credentials. Keep correlation and status, never the raw error.
+    if (status >= 500) req.log.error({ requestId: req.id, statusCode: status }, 'Request failed');
     return reply.code(status).send({
       error: status === 401 ? 'UNAUTHORIZED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : 'ERROR',
       message: status < 500 ? (error.message ?? 'Request failed') : 'Internal server error',
@@ -95,6 +118,26 @@ export async function buildApp() {
 
   if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD === 'true') {
     await app.register(fieldLeadRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE === 'true') {
+    await app.register(searchClosureRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS === 'true') {
+    await app.register(contactAccessRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY === 'true') {
+    await app.register(eligibilityRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_GROUPS === 'true') {
+    await app.register(groupsRoutes);
+  }
+
+  if (process.env.NODE_ENV !== 'production' && process.env.KUKLA_ENABLE_EXPERIMENTAL_TASKS === 'true') {
+    await app.register(tasksRoutes);
   }
 
   return app;

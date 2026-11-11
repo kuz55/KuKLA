@@ -52,10 +52,28 @@ test('login with valid credentials returns token', async () => {
   await registerUser(email, password);
   const r = await loginUser(email, password);
   assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   const data = await r.json();
   assert.ok(data.token);
   assert.ok(data.token.length > 100);
   assert.equal(data.user.email, email);
+});
+
+test('concurrent logins create independently revocable sessions', async () => {
+  const email = `sessions-${Date.now()}@kukla.local`;
+  const password = 'session-test-pass-123456';
+  assert.equal((await registerUser(email, password)).status, 200);
+  const [first, second] = await Promise.all([loginUser(email, password), loginUser(email, password)]);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  const a = (await first.json()).token;
+  const b = (await second.json()).token;
+  assert.notEqual(a, b);
+  const headers = (token) => ({ Authorization: `Bearer ${token}` });
+  assert.equal((await fetch(`${base}/api/v1/auth/logout`, { method: 'POST', headers: headers(a) })).status, 200);
+  assert.equal((await fetch(`${base}/api/v1/me`, { headers: headers(a) })).status, 401);
+  assert.equal((await fetch(`${base}/api/v1/me`, { headers: headers(b) })).status, 200);
+  assert.equal((await fetch(`${base}/api/v1/auth/logout`, { method: 'POST', headers: headers(b) })).status, 200);
 });
 
 test('login with wrong password returns 401', async () => {
@@ -113,6 +131,7 @@ test('/me with valid token returns user data', async () => {
     headers: { Authorization: `Bearer ${token}` },
   });
   assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   const data = await r.json();
   assert.equal(data.email, email);
   assert.equal(data.role, 'SEARCHER');

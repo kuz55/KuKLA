@@ -40,6 +40,28 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      - name: Test LAN certificate setup
+        run: bash ../infrastructure/lan-test/test-init.sh
+      - name: Validate isolated LAN Compose config
+        run: docker compose -f ../infrastructure/lan-test/compose.yml config --quiet
+        env:
+          KUKLA_LAN_IP: 192.168.77.10
+          POSTGRES_PASSWORD: test-only-value
+          JWT_SECRET: test-only-value
+      - name: Validate isolated training Compose config
+        run: docker compose -p kukla-training-ci -f ../infrastructure/lan-test/compose.yml -f ../infrastructure/lan-test/compose.training.yml config --quiet
+        env:
+          KUKLA_LAN_IP: 192.168.77.10
+          POSTGRES_PASSWORD: test-only-value
+          JWT_SECRET: test-only-value
+      - name: Smoke-test disposable LAN stack
+        run: bash ../infrastructure/lan-test/ci-smoke.sh
+        env:
+          KUKLA_DISPOSABLE_CI: '1'
+      - name: Smoke-test disposable training stack
+        run: bash ../infrastructure/lan-test/ci-training-smoke.sh
+        env:
+          KUKLA_DISPOSABLE_CI: '1'
       - run: npm run lint
       - run: npm run build
       - run: npm run migrate
@@ -86,10 +108,35 @@ jobs:
           done
           echo "server did not become ready in 30s" >&2
           exit 1
-      - run: npm test
+      - name: Run server tests
+        run: |
+          log="$RUNNER_TEMP/server-tests.log"
+          if npm test > "$log" 2>&1; then
+            cat "$log"
+          else
+            cat "$log"
+            node test/ci-failure-summary.mjs "$log"
+            exit 1
+          fi
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rebuild/go.mod
+          cache-dependency-path: rebuild/go.sum
+      - name: Test desktop engine against disposable server
+        working-directory: rebuild
+        run: |
+          log="$RUNNER_TEMP/remote-integration-test.log"
+          if ! go test ./internal/httpapi -run '^TestRemoteSearchesRealServer$' -count=1 > "$log" 2>&1; then
+            cat "$log"
+            echo "::error title=Desktop server integration::$(tail -n 15 "$log" | tr '\n' ' ')"
+            exit 1
+          fi
+          cat "$log"
+        env:
+          KUKLA_DISPOSABLE_INTEGRATION: '1'
       - name: Show server log
         if: failure()
         run: cat server.log
@@ -137,9 +184,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install GTK build dependencies
+        # Fail explicitly if the Ubuntu package mirrors stall; do not leave an
+        # otherwise completed CI run blocked indefinitely at dependency setup.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y build-essential make pkg-config libgtk-4-dev libjson-glib-dev
+          sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 update
+          sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y build-essential make pkg-config libgtk-4-dev libjson-glib-dev
       - name: Test Windows packaging layout
         run: bash .github/scripts/test-package-windows.sh
       - name: Compile GTK client

@@ -11,6 +11,7 @@ import (
 
 	"github.com/kuz55/KuKLA/rebuild/internal/application"
 	"github.com/kuz55/KuKLA/rebuild/internal/domain"
+	"github.com/kuz55/KuKLA/rebuild/internal/remoteauth"
 )
 
 const maxRequestBytes = 1 << 20
@@ -37,8 +38,49 @@ type errorResponse struct {
 
 // NewHandler exposes the local desktop API. The listener must be a private
 // Unix socket or an ACL-protected Windows named pipe, never a public TCP port.
-func NewHandler(version string, searches SearchService, profiles ProfileService, actorID domain.ID, shutdown func()) http.Handler {
+func NewHandler(version string, searches SearchService, profiles ProfileService, actorID domain.ID, shutdown func(), sessions ...*remoteauth.Session) http.Handler {
 	mux := http.NewServeMux()
+	if len(sessions) > 0 && sessions[0] != nil {
+        session := sessions[0]
+        mux.HandleFunc("POST /v1/remote/login", func(w http.ResponseWriter, r *http.Request) {
+            r.Body = http.MaxBytesReader(w, r.Body, 16384)
+            var input struct { Server string `json:"server"`; Login string `json:"login"`; Password string `json:"password"` }
+            decoder := json.NewDecoder(r.Body); decoder.DisallowUnknownFields()
+            if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+                writeError(w, http.StatusBadRequest, "invalid request"); return
+            }
+            user, err := session.Login(r.Context(), input.Server, input.Login, input.Password)
+            switch {
+            case errors.Is(err, remoteauth.ErrInvalidServer): writeError(w, http.StatusBadRequest, "invalid server address")
+            case errors.Is(err, remoteauth.ErrCredentials): writeError(w, http.StatusUnauthorized, "invalid credentials")
+            case errors.Is(err, remoteauth.ErrAlreadySignedIn): writeError(w, http.StatusConflict, "already signed in")
+            case err != nil: writeError(w, http.StatusBadGateway, "server unavailable")
+            default: writeJSON(w, http.StatusOK, user)
+            }
+        })
+        writeRemoteError := func(w http.ResponseWriter, err error) {
+            switch {
+            case errors.Is(err, remoteauth.ErrSignedOut): writeError(w, http.StatusUnauthorized, "server session is not active")
+            case errors.Is(err, remoteauth.ErrForbidden): writeError(w, http.StatusForbidden, "access denied")
+            case errors.Is(err, remoteauth.ErrNotFound): writeError(w, http.StatusNotFound, "search not available")
+            default: writeError(w, http.StatusBadGateway, "server unavailable")
+            }
+        }
+        mux.HandleFunc("GET /v1/remote/searches", func(w http.ResponseWriter, r *http.Request) {
+            result, err := session.Searches(r.Context())
+            if err != nil { writeRemoteError(w, err); return }
+            writeJSON(w, http.StatusOK, result)
+        })
+        mux.HandleFunc("GET /v1/remote/searches/{id}", func(w http.ResponseWriter, r *http.Request) {
+            result, err := session.Search(r.Context(), r.PathValue("id"))
+            if err != nil { writeRemoteError(w, err); return }
+            writeJSON(w, http.StatusOK, result)
+        })
+        mux.HandleFunc("POST /v1/remote/logout", func(w http.ResponseWriter, r *http.Request) {
+            if session.Logout(r.Context()) != nil { writeError(w, http.StatusBadGateway, "local session cleared; server logout failed"); return }
+            writeJSON(w, http.StatusOK, map[string]string{"status":"signed_out"})
+        })
+    }
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Version: version})
 	})

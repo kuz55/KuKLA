@@ -1,0 +1,23 @@
+# Overlay for a separate, synthetic-data-only training stack. Always use
+# --project-name kukla-training; never point it at an operational database.
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: kukla_training
+  server:
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgres://kukla:${POSTGRES_PASSWORD:?Initialize .env first}@postgres:5432/kukla_training
+      KUKLA_ENABLE_EXPERIMENTAL_INTAKE: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_COORDINATION: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_FIELD_LEAD: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_SEARCH_CLOSURE: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_CONTACT_ACCESS: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_ELIGIBILITY: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_GROUPS: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_TASKS: 'true'
+      KUKLA_ENABLE_EXPERIMENTAL_TASK_REMINDERS: 'true'
+  proxy:
+    volumes:
+      - ./nginx.training.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./training-ui:/usr/share/nginx/html:ro

@@ -1,6 +1,6 @@
 # Native GTK desktop client
 
-The operations page starts a Go engine next to the UI binary and communicates over a per-instance local IPC endpoint. It can create/list searches stored in SQLite; the profile page edits a consent-based local questionnaire, and the role page explains the current role catalog. Role assignment and account review remain disabled until verified phone authentication is connected.
+The operations page starts a Go engine next to the UI binary and communicates over a per-instance local IPC endpoint. It can create/list searches stored in SQLite; the profile page edits a consent-based local questionnaire, and the role page explains the current role catalog. An experimental server sign-in page is separate from the local workflow. Role assignment and account review remain disabled.
 
 ## Linux build prerequisites
 

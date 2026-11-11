@@ -8,6 +8,13 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *stack;
     GtkWidget *title_entry;
+    GtkWidget *server_entry;
+    GtkWidget *login_entry;
+    GtkWidget *password_entry;
+    GtkWidget *remote_status;
+    GtkTextBuffer *remote_searches_buffer;
+    GtkWidget *remote_search_id;
+    GtkWidget *remote_search_status;
     GtkTextBuffer *searches_buffer;
     GtkWidget *status_label;
     GtkWidget *profile_full_name;
@@ -295,7 +302,7 @@ static void refresh_roles(AppState *state) {
         g_free(body);
         return;
     }
-    GString *description = g_string_new("Роль задаёт доступ в приложении. Назначение ролей появится после подключения подтверждённой учётной записи по телефону.\n\n");
+    GString *description = g_string_new("Роль задаёт доступ в приложении. Назначение ролей пока не подключено к подтверждённой учётной записи.\n\n");
     JsonArray *roles = json_node_get_array(json_parser_get_root(parser));
     for (guint i = 0; i < json_array_get_length(roles); i++) {
         JsonObject *role = json_array_get_object_element(roles, i);
@@ -392,6 +399,164 @@ static GtkWidget *make_operations_page(AppState *state) {
     return page;
 }
 
+static void on_remote_login(GtkButton *button, gpointer user_data) {
+    (void)button;
+    AppState *state = user_data;
+    const gchar *server = gtk_editable_get_text(GTK_EDITABLE(state->server_entry));
+    const gchar *login = gtk_editable_get_text(GTK_EDITABLE(state->login_entry));
+    const gchar *password = gtk_editable_get_text(GTK_EDITABLE(state->password_entry));
+    JsonBuilder *builder = json_builder_new();
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "server"); json_builder_add_string_value(builder, server);
+    json_builder_set_member_name(builder, "login"); json_builder_add_string_value(builder, login);
+    json_builder_set_member_name(builder, "password"); json_builder_add_string_value(builder, password);
+    json_builder_end_object(builder);
+    JsonNode *root = json_builder_get_root(builder);
+    JsonGenerator *generator = json_generator_new();
+    json_generator_set_root(generator, root);
+    gchar *payload = json_generator_to_data(generator, NULL);
+    gtk_editable_set_text(GTK_EDITABLE(state->password_entry), "");
+    guint status = 0;
+    GError *error = NULL;
+    gchar *response = engine_client_request(&state->engine, "POST", "/v1/remote/login", payload, &status, &error);
+    g_free(payload); json_node_free(root); g_object_unref(generator); g_object_unref(builder);
+    if (status == 200 && response != NULL) {
+        JsonParser *parser = json_parser_new();
+        if (json_parser_load_from_data(parser, response, -1, NULL) && JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser))) {
+            JsonObject *user = json_node_get_object(json_parser_get_root(parser));
+            const gchar *name = json_object_get_string_member_with_default(user, "name", "Участник");
+            gchar *message = g_strdup_printf("Вход выполнен: %s. Операции ниже остаются только локальными.", name);
+            gtk_label_set_text(GTK_LABEL(state->remote_status), message);
+            g_free(message);
+        } else gtk_label_set_text(GTK_LABEL(state->remote_status), "Получен некорректный ответ движка.");
+        g_object_unref(parser);
+    } else if (status == 400) gtk_label_set_text(GTK_LABEL(state->remote_status), "Нужен HTTPS-адрес сервера без пути; HTTP разрешён только на этом компьютере.");
+    else if (status == 401) gtk_label_set_text(GTK_LABEL(state->remote_status), "Неверный логин или пароль.");
+    else if (status == 409) gtk_label_set_text(GTK_LABEL(state->remote_status), "Сначала выйдите из текущей серверной сессии.");
+    else gtk_label_set_text(GTK_LABEL(state->remote_status), "Сервер недоступен или сертификат не прошёл проверку.");
+    g_clear_error(&error); g_free(response);
+}
+
+static void on_remote_logout(GtkButton *button, gpointer user_data) {
+    (void)button;
+    AppState *state = user_data;
+    gtk_text_buffer_set_text(state->remote_searches_buffer, "", -1);
+    gtk_editable_set_text(GTK_EDITABLE(state->remote_search_id), "");
+    gtk_label_set_text(GTK_LABEL(state->remote_search_status), "Войдите на сервер и обновите список.");
+    guint status = 0; GError *error = NULL;
+    gchar *response = engine_client_request(&state->engine, "POST", "/v1/remote/logout", "{}", &status, &error);
+    if (status == 200) gtk_label_set_text(GTK_LABEL(state->remote_status), "Вы вышли из серверной сессии.");
+    else if (status == 502) gtk_label_set_text(GTK_LABEL(state->remote_status), "Локальная сессия очищена, но сервер не подтвердил выход.");
+    else gtk_label_set_text(GTK_LABEL(state->remote_status), "Движок недоступен: выход не подтверждён.");
+    g_clear_error(&error); g_free(response);
+}
+
+static GtkWidget *make_login_page(AppState *state) {
+    GtkWidget *page = make_page("Вход на сервер", "Экспериментальное подключение. Локальные операции не синхронизируются и не защищены серверными правами. Не используйте реальные данные.");
+    state->server_entry = profile_field(page, "Адрес сервера (HTTPS)");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(state->server_entry), "https://имя-сервера");
+    state->login_entry = profile_field(page, "Электронная почта или телефон");
+    state->password_entry = profile_field(page, "Пароль");
+    gtk_entry_set_visibility(GTK_ENTRY(state->password_entry), FALSE);
+    gtk_entry_set_input_purpose(GTK_ENTRY(state->password_entry), GTK_INPUT_PURPOSE_PASSWORD);
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *signin = gtk_button_new_with_label("Войти");
+    GtkWidget *signout = gtk_button_new_with_label("Выйти");
+    g_signal_connect(signin, "clicked", G_CALLBACK(on_remote_login), state);
+    g_signal_connect(signout, "clicked", G_CALLBACK(on_remote_logout), state);
+    gtk_box_append(GTK_BOX(row), signin); gtk_box_append(GTK_BOX(row), signout);
+    gtk_box_append(GTK_BOX(page), row);
+    state->remote_status = gtk_label_new("Нет серверной сессии.");
+    gtk_label_set_xalign(GTK_LABEL(state->remote_status), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(state->remote_status), TRUE);
+    gtk_box_append(GTK_BOX(page), state->remote_status);
+    return page;
+}
+
+static void show_remote_error(AppState *state, guint status) {
+    gtk_text_buffer_set_text(state->remote_searches_buffer, "", -1);
+    const gchar *text = "Сервер недоступен или вернул некорректный ответ.";
+    if (status == 401) text = "Серверная сессия отсутствует или истекла. Войдите снова.";
+    else if (status == 403) text = "Доступ запрещён сервером.";
+    else if (status == 404) text = "Поиск не найден или недоступен.";
+    gtk_label_set_text(GTK_LABEL(state->remote_search_status), text);
+}
+
+static void on_remote_searches(GtkButton *button, gpointer user_data) {
+    (void)button;
+    AppState *state = user_data;
+    // Never leave old results visible when the request fails or access changes.
+    gtk_text_buffer_set_text(state->remote_searches_buffer, "", -1);
+    guint status = 0; GError *error = NULL;
+    gchar *body = engine_client_request(&state->engine, "GET", "/v1/remote/searches", NULL, &status, &error);
+    if (body == NULL || status != 200) { show_remote_error(state, status); g_clear_error(&error); g_free(body); return; }
+    JsonParser *parser = json_parser_new();
+    if (!json_parser_load_from_data(parser, body, -1, &error) || !JSON_NODE_HOLDS_ARRAY(json_parser_get_root(parser))) {
+        show_remote_error(state, 502); g_clear_error(&error); g_object_unref(parser); g_free(body); return;
+    }
+    JsonArray *array = json_node_get_array(json_parser_get_root(parser));
+    GString *list = g_string_new(NULL);
+    for (guint i = 0; i < json_array_get_length(array); i++) {
+        JsonObject *item = json_array_get_object_element(array, i);
+        if (item == NULL) continue;
+        const gchar *id = json_object_get_string_member_with_default(item, "id", "");
+        const gchar *title = json_object_get_string_member_with_default(item, "title", "");
+        const gchar *search_status = json_object_get_string_member_with_default(item, "status", "");
+        g_string_append_printf(list, "%s\n%s  ·  %s\n\n", id, title, search_status);
+    }
+    if (list->len == 0) g_string_append(list, "Доступных поисков нет.");
+    gtk_text_buffer_set_text(state->remote_searches_buffer, list->str, -1);
+    gtk_label_set_text(GTK_LABEL(state->remote_search_status), "Список получен с сервера; только для тестов.");
+    g_string_free(list, TRUE); g_object_unref(parser); g_free(body);
+}
+
+static void on_remote_search_detail(GtkButton *button, gpointer user_data) {
+    (void)button;
+    AppState *state = user_data;
+    const gchar *id = gtk_editable_get_text(GTK_EDITABLE(state->remote_search_id));
+    // Encode the ID as one path segment; the engine validates its UUID shape.
+    gchar *escaped = g_uri_escape_string(id, NULL, FALSE);
+    gchar *path = g_strconcat("/v1/remote/searches/", escaped, NULL);
+    guint status = 0; GError *error = NULL;
+    gtk_label_set_text(GTK_LABEL(state->remote_search_status), "");
+    gchar *body = engine_client_request(&state->engine, "GET", path, NULL, &status, &error);
+    g_free(escaped); g_free(path);
+    if (body == NULL || status != 200) { show_remote_error(state, status); g_clear_error(&error); g_free(body); return; }
+    JsonParser *parser = json_parser_new();
+    if (!json_parser_load_from_data(parser, body, -1, &error) || !JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser))) {
+        show_remote_error(state, 502); g_clear_error(&error); g_object_unref(parser); g_free(body); return;
+    }
+    JsonObject *item = json_node_get_object(json_parser_get_root(parser));
+    gchar *text = g_strdup_printf("Карточка: %s\nСтатус: %s\nID: %s", json_object_get_string_member_with_default(item, "title", ""), json_object_get_string_member_with_default(item, "status", ""), json_object_get_string_member_with_default(item, "id", ""));
+    gtk_label_set_text(GTK_LABEL(state->remote_search_status), text);
+    g_free(text); g_object_unref(parser); g_free(body);
+}
+
+static GtkWidget *make_remote_searches_page(AppState *state) {
+    GtkWidget *page = make_page("Поиски на сервере — тест", "Только просмотр тестовых записей. Доступ определяется текущими экспериментальными правами сервера; они не реализуют все согласованные правила. Локальные операции не синхронизируются. Не используйте персональные данные.");
+    GtkWidget *refresh = gtk_button_new_with_label("Загрузить список с сервера");
+    g_signal_connect(refresh, "clicked", G_CALLBACK(on_remote_searches), state);
+    gtk_box_append(GTK_BOX(page), refresh);
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_widget_set_size_request(scroll, -1, 230);
+    GtkWidget *view = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
+    state->remote_searches_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), view);
+    gtk_box_append(GTK_BOX(page), scroll);
+    state->remote_search_id = profile_field(page, "ID поиска из списка");
+    GtkWidget *detail = gtk_button_new_with_label("Открыть краткую карточку");
+    g_signal_connect(detail, "clicked", G_CALLBACK(on_remote_search_detail), state);
+    gtk_box_append(GTK_BOX(page), detail);
+    state->remote_search_status = gtk_label_new("Войдите на сервер и обновите список.");
+    gtk_label_set_xalign(GTK_LABEL(state->remote_search_status), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(state->remote_search_status), TRUE);
+    gtk_box_append(GTK_BOX(page), state->remote_search_status);
+    return page;
+}
+
 static void on_navigation_clicked(GtkButton *button, gpointer user_data) {
     GtkStack *stack = GTK_STACK(user_data);
     const char *page_name = g_object_get_data(G_OBJECT(button), "kukla-page");
@@ -466,7 +631,9 @@ static void activate(GtkApplication *application, gpointer user_data) {
     gtk_widget_set_vexpand(stack_widget, TRUE);
     gtk_box_append(GTK_BOX(content), stack_widget);
 
-    add_navigation_button(sidebar, stack, "Операции", "operations");
+    add_navigation_button(sidebar, stack, "Вход на сервер", "login");
+    add_navigation_button(sidebar, stack, "Операции (локально)", "operations");
+    add_navigation_button(sidebar, stack, "Поиски на сервере (тест)", "remote-searches");
     add_navigation_button(sidebar, stack, "Карта", "map");
     add_navigation_button(sidebar, stack, "Задачи и группы", "field");
     add_navigation_button(sidebar, stack, "Заявки", "intake");
@@ -475,7 +642,9 @@ static void activate(GtkApplication *application, gpointer user_data) {
     add_navigation_button(sidebar, stack, "Моя анкета", "profile");
     add_navigation_button(sidebar, stack, "Роли доступа", "roles");
 
+    gtk_stack_add_named(stack, make_login_page(state), "login");
     gtk_stack_add_named(stack, make_operations_page(state), "operations");
+    gtk_stack_add_named(stack, make_remote_searches_page(state), "remote-searches");
     gtk_stack_add_named(stack, make_page("Карта", "Офлайн-карта появится после подключения локального пакета данных."), "map");
     gtk_stack_add_named(stack, make_page("Полевой режим", "Задачи, позиции и сигналы будут подключены после реализации их моделей и правил доступа."), "field");
     gtk_stack_add_named(stack, make_page("Заявки", "Экран заявок появится после утверждения модели обращения и её связи с операцией."), "intake");

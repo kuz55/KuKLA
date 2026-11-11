@@ -94,6 +94,14 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
       incident_lng: z.number().min(-180).max(180).nullable().optional(),
     }).refine((value) => Object.keys(value).length > 0, { message: 'Nothing to update' }).parse(req.body);
 
+    // The generic update endpoint cannot enforce the agreed close/reopen
+    // workflow, including field-lead confirmation, exceptions and audit.
+    // Fail the entire request (including mixed field updates) until a dedicated
+    // transition workflow exists. Do this only after the access check above.
+    if (body.status !== undefined) {
+      throw httpErrors.conflict('Search status transitions are not available via this endpoint');
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -102,21 +110,13 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
            title=CASE WHEN $1::boolean THEN $2 ELSE title END,
            area=CASE WHEN $3::boolean THEN $4 ELSE area END,
            description=CASE WHEN $5::boolean THEN $6 ELSE description END,
-           status=CASE WHEN $7::boolean THEN $8 ELSE status END,
-           incident_lat=CASE WHEN $9::boolean THEN $10 ELSE incident_lat END,
-           incident_lng=CASE WHEN $11::boolean THEN $12 ELSE incident_lng END,
-           started_at=CASE WHEN $7 AND $8='ACTIVE' AND started_at IS NULL THEN now() ELSE started_at END,
-           ended_at=CASE
-             WHEN $7 AND $8 IN ('COMPLETED','CANCELLED') THEN now()
-             WHEN $7 AND $8='ACTIVE' THEN NULL
-             ELSE ended_at
-           END
-         WHERE id=$13 RETURNING *`,
+           incident_lat=CASE WHEN $7::boolean THEN $8 ELSE incident_lat END,
+           incident_lng=CASE WHEN $9::boolean THEN $10 ELSE incident_lng END
+         WHERE id=$11 RETURNING *`,
         [
           body.title !== undefined, body.title ?? null,
           body.area !== undefined, body.area,
           body.description !== undefined, body.description,
-          body.status !== undefined, body.status ?? null,
           body.incident_lat !== undefined, body.incident_lat,
           body.incident_lng !== undefined, body.incident_lng,
           id,
@@ -193,6 +193,14 @@ const searchRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       await client.query('BEGIN');
+      // Experimental group operations use this same search lock. Do not let a
+      // legacy membership removal silently bypass an approved group roster.
+      await client.query('SELECT id FROM searches WHERE id=$1 FOR UPDATE', [id]);
+      const groupReferences = await client.query(`SELECT 1 FROM field_group_members WHERE search_id=$1 AND user_id=$2
+        UNION ALL SELECT 1 FROM field_group_leads WHERE search_id=$1 AND user_id=$2
+        UNION ALL SELECT 1 FROM field_group_lead_proposals WHERE search_id=$1 AND candidate_id=$2
+        UNION ALL SELECT 1 FROM field_group_member_proposals WHERE search_id=$1 AND user_id=$2 LIMIT 1`, [id,userId]);
+      if (groupReferences.rowCount) throw httpErrors.conflict('Resolve group membership and proposals before removing the search member');
       const removed = await client.query(
         'DELETE FROM search_members WHERE search_id=$1 AND user_id=$2 RETURNING user_id',
         [id, userId],

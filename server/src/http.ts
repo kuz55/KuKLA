@@ -15,18 +15,25 @@ export const tokenHash = (req: FastifyRequest) =>
 export const auth = async (req: FastifyRequest) => {
   try {
     await req.jwtVerify();
-    const session = await pool.query(
+  } catch {
+    throw httpErrors.unauthorized('Authentication required');
+  }
+  // Authentication fails closed when the session store is unavailable, but
+  // a database outage is not evidence that a user's credentials are invalid.
+  // Do not pass database errors (which may contain sensitive values) onwards.
+  let session;
+  try {
+    session = await pool.query(
       `SELECT u.id,u.name,u.email,u.phone,u.role
        FROM sessions s JOIN users u ON u.id=s.user_id
        WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active=true`,
       [tokenHash(req)]
     );
-    if (!session.rowCount) throw httpErrors.unauthorized('Session expired or revoked');
-    req.user = session.rows[0] as User;
-  } catch (error) {
-    if ((error as { statusCode?: number }).statusCode === 401) throw error;
-    throw httpErrors.unauthorized('Authentication required');
+  } catch {
+    throw httpErrors.serviceUnavailable('Session service unavailable');
   }
+  if (!session.rowCount) throw httpErrors.unauthorized('Session expired or revoked');
+  req.user = session.rows[0] as User;
 };
 
 export const roles = (...allowed: Role[]) => async (req: FastifyRequest) => {
