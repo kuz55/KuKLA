@@ -102,6 +102,15 @@ jobs:
         env:
           DATABASE_URL: postgres://kukla:kukla@localhost:5432/kukla
           KUKLA_TEST_URL: http://127.0.0.1:8080
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rebuild/go.mod
+          cache-dependency-path: rebuild/go.sum
+      - name: Test desktop engine against disposable server
+        working-directory: rebuild
+        run: go test ./internal/httpapi -run '^TestRemoteSearchesRealServer$' -count=1
+        env:
+          KUKLA_DISPOSABLE_INTEGRATION: '1'
       - name: Show server log
         if: failure()
         run: cat server.log
