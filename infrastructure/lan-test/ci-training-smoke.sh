@@ -76,11 +76,17 @@ try {
     'server','node','--input-type=module'],{input:fs.readFileSync('enrol-training.mjs'),stdio:'pipe'});
 } catch { productionBlocked=true; }
 if (!productionBlocked) throw Error('Production enrolment must be blocked');
-const groupLead=await login('grouplead'), groupBase=`/api/v1/field-groups/searches/${created.searchId}`;
+const groupLead=await login('grouplead'), searcher=await login('searcher'), groupBase=`/api/v1/field-groups/searches/${created.searchId}`;
 const group=await (await req(`${groupBase}/groups`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({requestId:crypto.randomUUID(),title:'Synthetic group',candidateId:groupLead.user.id})})).json();
 await req(`${groupBase}/groups/${group.groupId}/lead-response`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({proposalId:group.proposalId,accept:true})});
 const taskBase=`/api/v1/field-tasks/searches/${created.searchId}`;
 const task=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({requestId:crypto.randomUUID(),description:'Synthetic task',dueAt:'2030-01-01T00:00:00Z',priority:'URGENT'})})).json();
+const deniedMember=await fetch(base+`${taskBase}/groups/${group.groupId}/tasks`,{headers:{authorization:`Bearer ${searcher.token}`}});
+if(deniedMember.status!==403) throw Error('Unapproved searcher must not see group tasks');
+const memberProposal=await (await req(`${groupBase}/groups/${group.groupId}/member-proposals`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({requestId:crypto.randomUUID(),userId:searcher.user.id,action:'ADD'})})).json();
+await req(`${groupBase}/groups/${group.groupId}/member-decision`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({proposalId:memberProposal.proposalId,approve:true})});
+const memberTasks=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{headers:{authorization:`Bearer ${searcher.token}`}})).json();
+if(!memberTasks.items.some(x=>x.id===task.taskId)) throw Error('Approved searcher cannot see group task');
 const tasks=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{headers:{authorization:`Bearer ${groupLead.token}`}})).json();
 if (!tasks.items.some(x=>x.id===task.taskId && x.priority==='URGENT')) throw Error('Group task missing');
 await req(`${taskBase}/tasks/${task.taskId}/accept`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({requestId:crypto.randomUUID()})});

@@ -24,7 +24,7 @@ test('training interface logs in, retries unchanged, hands off and safely render
   const dom=new JSDOM(html,{url:'https://training.invalid/'});
   const {window}=dom; globalThis.window=window; globalThis.document=window.document; globalThis.FormData=window.FormData;
   const calls=[]; let creates=0, proposals=0, groups=0, resultAttempts=0, reviewAttempts=0;
-  const search=randomUUID(), candidate=randomUUID(), proposal=randomUUID(), other=randomUUID(), group=randomUUID(), groupProposal=randomUUID(), task=randomUUID(), resultId=randomUUID();
+  const search=randomUUID(), candidate=randomUUID(), proposal=randomUUID(), other=randomUUID(), group=randomUUID(), groupProposal=randomUUID(), task=randomUUID(), resultId=randomUUID(), rosterProposal=randomUUID();
   globalThis.fetch=async (path,options)=>{
     calls.push({path,options});
     if(path==='/api/v1/auth/login') return ok({token:'synthetic-token',user:{name:'Test',id:candidate}});
@@ -36,6 +36,9 @@ test('training interface logs in, retries unchanged, hands off and safely render
     if(path===`/api/v1/field-groups/searches/${search}/groups`) { groups++; if(groups===1) throw new Error('response lost'); return ok({groupId:group,proposalId:groupProposal}); }
     if(path.startsWith('/api/v1/field-groups/notifications')) return ok({items:[{kind:'LEAD_PROPOSED',search_id:search,group_id:group,proposal_id:groupProposal}],nextCursor:null});
     if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/lead-response`) return ok({accepted:true});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/member-proposals`) return ok({proposalId:rosterProposal});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}`) return ok({group:{title:'Synthetic group'},lead:{user_id:candidate},members:[{user_id:candidate}],memberProposals:[{id:rosterProposal,user_id:other,action:'ADD'}]});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/member-decision`) return ok({approved:true});
     if(path===`/api/v1/field-tasks/searches/${search}/groups/${group}/tasks`) return ok({taskId:task});
     if(path.startsWith(`/api/v1/field-tasks/searches/${search}/groups/${group}/tasks?`)) return ok({items:[{id:task,description:'Synthetic task',priority:'URGENT',due_at:'2030-01-01T00:00:00Z',status:'ASSIGNED',overdue:true}],nextCursor:null});
     if(path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/accept`) return ok({accepted:true});
@@ -99,6 +102,13 @@ test('training interface logs in, retries unchanged, hands off and safely render
     assert.equal(groupCalls[0].options.body,groupCalls[1].options.body); assert.ok(el('group-create-result').textContent.includes(group));
     el('group-inbox').click(); await tick(); el('group-inbox-list').querySelector('button').click(); await tick();
     assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/lead-response')).options.body).proposalId,groupProposal);
+    el('roster-propose').elements.searchId.value=search; el('roster-propose').elements.groupId.value=group; el('roster-propose').elements.userId.value=other;
+    el('roster-propose').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('roster-propose-result').textContent,/до утверждения/);
+    el('roster-view').elements.searchId.value=search; el('roster-view').elements.groupId.value=group;
+    el('roster-view').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('roster-proposals').textContent,/Добавить/); el('roster-proposals').querySelector('button').click(); await tick();
+    assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/member-decision')).options.body).proposalId,rosterProposal);
     el('task-create').elements.searchId.value=search; el('task-create').elements.groupId.value=group;
     el('task-create').elements.description.value='Synthetic task'; el('task-create').elements.dueAt.value='2030-01-01T12:00'; el('task-create').elements.priority.value='URGENT';
     el('task-create').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
