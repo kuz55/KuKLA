@@ -100,3 +100,18 @@ if(!history.items.some(x=>x.type==='SEARCH_CLOSED')) throw Error('Closure audit 
 await req(`${closure}/reopen`,{method:'POST',headers:headers(coordinator),body:JSON.stringify({reason:'Synthetic follow-up'})});
 console.log('Training stack: HTTPS, intake, coordination, group, review and closure API path passed.');
 NODE
+# Disposable, synthetic-only backup and restore check. Never touches the
+# source database with pg_restore; destination is new and CI-project isolated.
+stage='backup and restore to disposable database'
+umask 077
+docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T postgres \
+  pg_dump -U kukla -d kukla_training --format=custom > private/ci-training.dump
+docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T postgres \
+  createdb -U kukla kukla_training_restore_ci
+docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T postgres \
+  pg_restore -U kukla --no-owner --exit-on-error -d kukla_training_restore_ci < private/ci-training.dump
+query="SELECT (SELECT count(*) FROM schema_migrations)||':'||(SELECT count(*) FROM initial_reports)||':'||(SELECT count(*) FROM field_tasks WHERE status='ACCEPTED')||':'||(SELECT count(*) FROM field_task_results)||':'||(SELECT count(*) FROM events WHERE type IN ('SEARCH_CLOSED','SEARCH_REOPENED'));"
+source_summary="$(docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T postgres psql -X -v ON_ERROR_STOP=1 -U kukla -d kukla_training -tAc "$query")"
+restore_summary="$(docker compose -p "$project" -f compose.yml -f compose.training.yml exec -T postgres psql -X -v ON_ERROR_STOP=1 -U kukla -d kukla_training_restore_ci -tAc "$query")"
+[ "$source_summary" = "$restore_summary" ] && [ "$source_summary" = '34:1:1:2:2' ] || { echo '::error title=Training restore::Restored synthetic scenario does not match source' >&2; exit 1; }
+echo 'Disposable synthetic database restored to a separate database and checked; this is not an external backup.'
