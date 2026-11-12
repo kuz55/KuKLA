@@ -84,5 +84,19 @@ const task=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{method:
 const tasks=await (await req(`${taskBase}/groups/${group.groupId}/tasks`,{headers:{authorization:`Bearer ${groupLead.token}`}})).json();
 if (!tasks.items.some(x=>x.id===task.taskId && x.priority==='URGENT')) throw Error('Group task missing');
 await req(`${taskBase}/tasks/${task.taskId}/accept`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({requestId:crypto.randomUUID()})});
-console.log('Training stack: HTTPS, intake, coordinator, field lead, group and task path passed.');
+const taskPath=`${taskBase}/tasks/${task.taskId}`;
+const submit=async text=>(await (await req(`${taskPath}/results`,{method:'POST',headers:headers(groupLead.token),body:JSON.stringify({requestId:crypto.randomUUID(),result:text})})).json()).resultId;
+const firstResult=await submit('Synthetic result');
+const deniedReview=await fetch(base+`${taskPath}/decision`,{method:'POST',headers:headers(operator),body:JSON.stringify({resultId:firstResult,approve:true})});
+if(deniedReview.status!==403) throw Error('Unauthorized review must be forbidden');
+await req(`${taskPath}/decision`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({resultId:firstResult,approve:false,reason:'Synthetic correction'})});
+const finalResult=await submit('Synthetic corrected result');
+await req(`${taskPath}/decision`,{method:'POST',headers:headers(lead.token),body:JSON.stringify({resultId:finalResult,approve:true})});
+const closure=`/api/v1/search-closure/searches/${created.searchId}`;
+await req(`${closure}/confirm`,{method:'POST',headers:headers(lead.token),body:'{}'});
+await req(`${closure}/close`,{method:'POST',headers:headers(coordinator),body:'{}'});
+const history=await (await req(`${closure}/audit`,{headers:{authorization:`Bearer ${coordinator}`}})).json();
+if(!history.items.some(x=>x.type==='SEARCH_CLOSED')) throw Error('Closure audit missing');
+await req(`${closure}/reopen`,{method:'POST',headers:headers(coordinator),body:JSON.stringify({reason:'Synthetic follow-up'})});
+console.log('Training stack: HTTPS, intake, coordination, group, review and closure API path passed.');
 NODE

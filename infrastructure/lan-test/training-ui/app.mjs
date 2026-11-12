@@ -1,9 +1,10 @@
 import { TrainingApi, ReportAttempt, ApiError } from './api.mjs';
 import { setupGroups } from './groups.mjs';
+import { setupReview } from './review.mjs';
 const api = new TrainingApi();
 const $ = id => document.getElementById(id);
 let attempt = null, reportId = null, selectedId = null, cursor = null, leadCursor = null, busy = false, handedOff = false, reportUncertain = false;
-let groups;
+let groups, review;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function uuid(value) {
   const id = String(value ?? '').trim();
@@ -11,7 +12,7 @@ function uuid(value) {
   return id;
 }
 window.addEventListener('beforeunload', event => {
-  if ((attempt && !handedOff) || groups?.pending()) { event.preventDefault(); event.returnValue = ''; }
+  if ((attempt && !handedOff) || groups?.pending() || review?.pending()) { event.preventDefault(); event.returnValue = ''; }
 });
 const keys = ['applicantName','applicantContact','missingPersonName','lastSeenTime','lastSeenPlace','situation'];
 const labels = { applicant_name:'Имя заявителя', applicant_contact:'Контакт заявителя', missing_person_name:'Имя пропавшего', last_seen_time:'Когда видели', last_seen_place:'Где видели', situation:'Описание', search_id:'Связанный поиск', resolution_reason:'Причина закрытия' };
@@ -31,8 +32,9 @@ async function run(action) {
   finally { busy = false; }
 }
 groups=setupGroups({api,run,uuid,message});
+review=setupReview({api,run,uuid,message});
 function resetSession() {
-  groups.reset();
+  groups.reset(); review.reset();
   api.token = null; attempt = null; reportId = selectedId = cursor = leadCursor = null; handedOff = false; reportUncertain = false;
   $('claim-form').reset(); $('propose-form').reset(); $('propose-button').disabled = false; $('new-proposal').hidden = true;
   $('claim-result').textContent = ''; $('proposal-result').textContent = ''; $('lead-result').textContent = ''; $('lead-list').replaceChildren(); $('lead-more').hidden = true; $('user-id').textContent = '';
@@ -46,7 +48,7 @@ $('login').addEventListener('submit', e => { e.preventDefault(); const node = e.
   message('Вход выполнен. Доступ к функциям проверяется сервером.');
 }); });
 $('logout').addEventListener('click', () => run(async () => {
-  if (((attempt && !handedOff) || groups.pending()) && !window.confirm('Есть запрос с неподтверждённым ответом или непереданное обращение. При выходе ключ повтора будет потерян. Выйти?')) return;
+  if (((attempt && !handedOff) || groups.pending() || review.pending()) && !window.confirm('Есть запрос с неподтверждённым ответом или непереданное обращение. При выходе ключ повтора будет потерян. Выйти?')) return;
   try { await api.logout(); resetSession(); message('Выход подтверждён сервером.'); }
   catch { resetSession(); message('Локальный выход выполнен; отзыв сессии сервером не подтверждён.'); }
 }));
