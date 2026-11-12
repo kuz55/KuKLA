@@ -1,6 +1,6 @@
 // Training UI only. Tokens and retry state are held in memory, never in storage.
 export class ApiError extends Error {
-  constructor(status) { super('Request failed'); this.status = status; }
+  constructor(status, body = null) { super('Request failed'); this.status = status; this.body = body; }
 }
 export class TrainingApi {
   constructor(fetcher = globalThis.fetch) { this.fetcher = fetcher; this.token = null; }
@@ -10,7 +10,11 @@ export class TrainingApi {
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}), ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (!response.ok) throw new ApiError(response.status);
+    if (!response.ok) {
+      let body = null;
+      try { body = await response.json(); } catch { /* Errors need not be JSON. */ }
+      throw new ApiError(response.status, body);
+    }
     return response.json();
   }
   async login(login, password) {

@@ -23,11 +23,32 @@ test('training interface logs in, retries unchanged, hands off and safely render
   const html=await readFile(new URL('../../infrastructure/lan-test/training-ui/index.html',import.meta.url),'utf8');
   const dom=new JSDOM(html,{url:'https://training.invalid/'});
   const {window}=dom; globalThis.window=window; globalThis.document=window.document; globalThis.FormData=window.FormData;
-  const calls=[]; let creates=0;
+  const calls=[]; let creates=0, proposals=0, groups=0, resultAttempts=0, reviewAttempts=0;
+  const search=randomUUID(), candidate=randomUUID(), proposal=randomUUID(), other=randomUUID(), group=randomUUID(), groupProposal=randomUUID(), task=randomUUID(), resultId=randomUUID(), rosterProposal=randomUUID();
   globalThis.fetch=async (path,options)=>{
     calls.push({path,options});
-    if(path==='/api/v1/auth/login') return ok({token:'synthetic-token',user:{name:'Test'}});
-    if(path==='/api/v1/intake/reports') { creates++; if(creates===1) throw new Error('lost response'); return ok({id:'report-id'}); }
+    if(path==='/api/v1/auth/login') return ok({token:'synthetic-token',user:{name:'Test',id:candidate}});
+    if(path===`/api/v1/coordination/searches/${search}/claim`) return {ok:false,status:409,json:async()=>({primaryId:other})};
+    if(path===`/api/v1/field-lead/searches/${search}/proposals`) { proposals++; if(proposals===2) throw new Error('response lost'); return ok({proposalId:proposal}); }
+    if(path.startsWith('/api/v1/field-lead/notifications')) return ok({items:[{kind:'PROPOSED',search_id:search,proposal_id:proposal}],nextCursor:null});
+    if(path===`/api/v1/field-lead/searches/${search}/proposals/mine`) return ok({id:proposal});
+    if(path===`/api/v1/field-lead/searches/${search}/proposals/accept`) return ok({fieldLeadId:candidate});
+    if(path===`/api/v1/field-groups/searches/${search}/groups`) { groups++; if(groups===1) throw new Error('response lost'); return ok({groupId:group,proposalId:groupProposal}); }
+    if(path.startsWith('/api/v1/field-groups/notifications')) return ok({items:[{kind:'LEAD_PROPOSED',search_id:search,group_id:group,proposal_id:groupProposal}],nextCursor:null});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/lead-response`) return ok({accepted:true});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/member-proposals`) return ok({proposalId:rosterProposal});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}`) return ok({group:{title:'Synthetic group'},lead:{user_id:candidate},members:[{user_id:candidate}],memberProposals:[{id:rosterProposal,user_id:other,action:'ADD'}]});
+    if(path===`/api/v1/field-groups/searches/${search}/groups/${group}/member-decision`) return ok({approved:true});
+    if(path===`/api/v1/field-tasks/searches/${search}/groups/${group}/tasks`) return ok({taskId:task});
+    if(path.startsWith(`/api/v1/field-tasks/searches/${search}/groups/${group}/tasks?`)) return ok({items:[{id:task,description:'Synthetic task',priority:'URGENT',due_at:'2030-01-01T00:00:00Z',status:'ASSIGNED',overdue:true}],nextCursor:null});
+    if(path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/accept`) return ok({accepted:true});
+    if(path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/results`) {resultAttempts++; if(resultAttempts===1) throw new Error('lost'); return ok({resultId});}
+    if(path.startsWith(`/api/v1/field-tasks/searches/${search}/tasks/${task}/results?`)) return ok({items:[{id:resultId,result:'<b>synthetic</b>',decision:null,return_reason:null}],nextCursor:null});
+    if(path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/decision`) {reviewAttempts++; if(reviewAttempts===1) throw new Error('lost'); return ok({resultId,decision:'RETURNED'});}
+    if(path===`/api/v1/search-closure/searches/${search}/confirm`) return ok({confirmed:true});
+    if(path===`/api/v1/search-closure/searches/${search}/close`) throw new Error('lost');
+    if(path.startsWith(`/api/v1/search-closure/searches/${search}/audit?`)) return ok({items:[{type:'SEARCH_CLOSED',created_at:'2026-01-01T00:00:00Z'}],nextCursor:null});
+    if(path==='/api/v1/intake/reports') { creates++; if(creates===1) throw new Error('lost response'); if(creates===2) return {ok:false,status:403,json:async()=>({error:'FORBIDDEN'})}; return ok({id:'report-id'}); }
     if(path==='/api/v1/intake/reports/report-id/handoff') return ok({});
     if(path.startsWith('/api/v1/intake/queue')) return ok({items:[{id:'report-id',handed_off_at:'2026-01-01T00:00:00Z'}],nextCursor:null});
     if(path==='/api/v1/intake/reports/report-id') return ok({applicant_name:'<img src=x onerror=alert(1)>',resolved_at:null});
@@ -46,9 +67,12 @@ test('training interface logs in, retries unchanged, hands off and safely render
     assert.match(el('message').textContent,/Нет подтверждения/);
     assert.equal(el('report').elements.applicantName.disabled,true);
     el('report').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('report').elements.applicantName.disabled,true,'a later permission error must not discard an ambiguous request');
+    el('report').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
     const requests=calls.filter(x=>x.path==='/api/v1/intake/reports');
-    assert.equal(requests.length,2); assert.equal(requests[0].options.body,requests[1].options.body);
+    assert.equal(requests.length,3); assert.equal(requests[0].options.body,requests[1].options.body);
     assert.equal(requests[0].options.headers['Idempotency-Key'],requests[1].options.headers['Idempotency-Key']);
+    assert.equal(requests[0].options.headers['Idempotency-Key'],requests[2].options.headers['Idempotency-Key']);
     assert.equal(JSON.parse(requests[0].options.body).applicantContact,null);
     el('handoff').click(); await tick(); assert.match(el('message').textContent,/SMS не отправлено/);
     el('refresh').click(); await tick(); el('queue').querySelector('button').click(); await tick();
@@ -56,5 +80,67 @@ test('training interface logs in, retries unchanged, hands off and safely render
     el('resolve').elements.title.value='Synthetic search';
     el('resolve').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
     assert.ok(calls.some(c=>c.path==='/api/v1/intake/reports/report-id/create-search'));
+    assert.ok(el('user-id').textContent.includes(candidate));
+    el('claim-form').elements.searchId.value=search;
+    el('claim-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.ok(el('claim-result').textContent.includes(other));
+    el('propose-form').elements.searchId.value=search; el('propose-form').elements.candidateId.value=candidate;
+    el('propose-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.ok(el('proposal-result').textContent.includes(proposal)); assert.equal(el('propose-button').disabled,true);
+    el('lead-notifications').click(); await tick(); el('lead-list').querySelector('button').click(); await tick();
+    const accept=[...el('lead-list').querySelectorAll('button')].find(button=>button.textContent==='Принять назначение');
+    assert.ok(accept); accept.click(); await tick(); assert.match(el('lead-result').textContent,/исторической квитанцией/);
+    assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/proposals/accept')).options.body).proposalId,proposal);
+    el('new-proposal').click(); el('propose-form').elements.searchId.value=search; el('propose-form').elements.candidateId.value=candidate;
+    el('propose-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('propose-button').disabled,true); assert.match(el('proposal-result').textContent,/Не повторяйте/);
+    el('group-create').elements.searchId.value=search; el('group-create').elements.candidateId.value=candidate; el('group-create').elements.title.value='Test group';
+    el('group-create').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('group-create-result').textContent,/Ответ не подтверждён/); assert.equal(el('group-create').elements.title.disabled,true);
+    el('group-create').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    const groupCalls=calls.filter(c=>c.path===`/api/v1/field-groups/searches/${search}/groups`);
+    assert.equal(groupCalls[0].options.body,groupCalls[1].options.body); assert.ok(el('group-create-result').textContent.includes(group));
+    el('group-inbox').click(); await tick(); el('group-inbox-list').querySelector('button').click(); await tick();
+    assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/lead-response')).options.body).proposalId,groupProposal);
+    el('roster-propose').elements.searchId.value=search; el('roster-propose').elements.groupId.value=group; el('roster-propose').elements.userId.value=other;
+    el('roster-propose').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('roster-propose-result').textContent,/до утверждения/);
+    el('roster-view').elements.searchId.value=search; el('roster-view').elements.groupId.value=group;
+    el('roster-view').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('roster-proposals').textContent,/Добавить/); el('roster-proposals').querySelector('button').click(); await tick();
+    assert.equal(JSON.parse(calls.find(c=>c.path.endsWith('/member-decision')).options.body).proposalId,rosterProposal);
+    el('task-create').elements.searchId.value=search; el('task-create').elements.groupId.value=group;
+    el('task-create').elements.description.value='Synthetic task'; el('task-create').elements.dueAt.value='2030-01-01T12:00'; el('task-create').elements.priority.value='URGENT';
+    el('task-create').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.ok(el('task-create-result').textContent.includes(task));
+    assert.equal(JSON.parse(calls.find(c=>c.path===`/api/v1/field-tasks/searches/${search}/groups/${group}/tasks`).options.body).priority,'URGENT');
+    el('task-list-form').elements.searchId.value=search; el('task-list-form').elements.groupId.value=group;
+    el('task-list-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('task-list').textContent,/⚠ Срочный/); assert.match(el('task-list').textContent,/ПРОСРОЧЕНО/);
+    el('task-list').querySelector('button').click(); await tick();
+    assert.ok(calls.some(c=>c.path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/accept`));
+    el('result-submit').elements.searchId.value=search; el('result-submit').elements.taskId.value=task; el('result-submit').elements.result.value='Synthetic result';
+    el('result-submit').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('result-submit').elements.result.disabled,true); assert.match(el('result-message').textContent,/не подтверждён/);
+    el('result-submit').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    const resultCalls=calls.filter(c=>c.path===`/api/v1/field-tasks/searches/${search}/tasks/${task}/results`);
+    assert.equal(resultCalls[0].options.body,resultCalls[1].options.body); assert.match(el('result-message').textContent,/ещё не завершена/);
+    el('review-form').elements.searchId.value=search; el('review-form').elements.taskId.value=task;
+    el('review-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('review-list').querySelector('b'),null); assert.match(el('review-list').textContent,/<b>synthetic/);
+    const reason=el('review-list').querySelector('input'); reason.value='Synthetic reason';
+    const buttons=el('review-list').querySelectorAll('button'); buttons[1].click(); await tick();
+    assert.equal(reason.disabled,true); assert.equal(buttons[0].disabled,true); assert.equal(buttons[1].disabled,false);
+    buttons[1].click(); await tick();
+    const decisionCalls=calls.filter(c=>c.path.endsWith('/decision')); assert.equal(decisionCalls.length,2);
+    assert.equal(decisionCalls[0].options.body,decisionCalls[1].options.body); assert.equal(JSON.parse(decisionCalls[0].options.body).reason,'Synthetic reason');
+    el('confirm-close').elements.searchId.value=search; el('confirm-close').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('closure-message').textContent,/ещё не закрыт/);
+    el('close-search').elements.searchId.value=search; el('close-search').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(el('close-search').querySelector('button').disabled,true); assert.match(el('closure-message').textContent,/не повторяйте/);
+    el('close-search').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.equal(calls.filter(c=>c.path===`/api/v1/search-closure/searches/${search}/close`).length,1,'do not repeat an ambiguous close');
+    el('closure-audit').elements.searchId.value=search; el('closure-audit').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})); await tick();
+    assert.match(el('closure-history').textContent,/SEARCH_CLOSED/); assert.equal(el('close-search').querySelector('button').disabled,true);
   } finally { dom.window.close(); delete globalThis.window; delete globalThis.document; delete globalThis.FormData; }
 });

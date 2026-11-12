@@ -7,6 +7,9 @@ services:
   server:
     environment:
       NODE_ENV: test
+      # All synthetic browser logins appear to originate at the proxy. This
+      # relaxed test-only threshold is not a production authentication policy.
+      RATE_LIMIT_LOGIN_MAX: '30'
       DATABASE_URL: postgres://kukla:${POSTGRES_PASSWORD:?Initialize .env first}@postgres:5432/kukla_training
       KUKLA_ENABLE_EXPERIMENTAL_INTAKE: 'true'
       KUKLA_ENABLE_EXPERIMENTAL_COORDINATION: 'true'

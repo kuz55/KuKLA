@@ -20,6 +20,12 @@ test('coordinator claim, additional roles and consent-based transfer on PostgreS
     searchId = (await pool.query("INSERT INTO searches(title,created_by) VALUES('Test',$1) RETURNING id", [a])).rows[0].id;
     const service = new CoordinationService(pool);
     await assert.rejects(service.claim(outsider, searchId), { statusCode: 403 });
+    for (const status of ['COMPLETED','CANCELLED']) {
+      await pool.query('UPDATE searches SET status=$2 WHERE id=$1',[searchId,status]);
+      await assert.rejects(service.claim(a, searchId), { statusCode: 409 });
+      assert.equal((await pool.query('SELECT count(*)::int n FROM search_coordinators WHERE search_id=$1',[searchId])).rows[0].n,0);
+    }
+    await pool.query("UPDATE searches SET status='PLANNED' WHERE id=$1",[searchId]);
     const claims = await Promise.all([service.claim(a, searchId), service.claim(b, searchId)]);
     assert.equal(claims.filter((x) => x.claimed).length, 1);
     const primary = claims.find((x) => x.claimed).primaryId;
